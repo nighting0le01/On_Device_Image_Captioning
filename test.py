@@ -15,6 +15,8 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 from models.ensemble_captioning_model import EsembleCaptioningModel
 from data.coco_dataloader import CocoDataLoader
 from data.coco_dataset import CocoDatasetKarpathy
+from data.vizwiz_dataset import VizWizDataset
+from data.vizwiz_dataloader import VizWizDataLoader
 from utils import language_utils
 from utils.language_utils import compute_num_pads as compute_num_pads
 from eval.eval import COCOEvalCap
@@ -187,7 +189,7 @@ def evaluate_model_on_set(ddp_model,
                           beam_sizes=[1],
                           stanford_model_path='./eval/get_stanford_models.sh',
                           use_images_instead_of_features=False,
-                          get_predictions=False):
+                          get_predictions=False, is_vizwiz=False):
 
     with torch.no_grad():
         ddp_model.eval()

@@ -3,6 +3,7 @@ import os
 import random
 from argparse import Namespace
 from time import time
+import json
 
 import numpy as np
 import torch
@@ -12,6 +13,8 @@ import torch.optim as optim
 from torch.nn.parallel import DistributedDataParallel as DDP
 from data.coco_dataset import CocoDatasetKarpathy
 from data.coco_dataloader import CocoDataLoader
+from data.vizwiz_dataset import VizWizDataset
+from data.vizwiz_dataloader import VizWizDataLoader
 from test import compute_evaluation_loss, evaluate_model_on_set
 from losses.loss import LabelSmoothingLoss
 from losses.reward import ReinforceCiderReward
@@ -62,6 +65,7 @@ def train(rank,
     already_trained_steps = data_loader.get_num_batches() * data_loader.get_epoch_it() + data_loader.get_batch_it()
     prev_print_iter = already_trained_steps
     num_iter = data_loader.get_num_batches() * train_args.num_epochs
+    print(f"NUM ITER: {num_iter}")
     for it in range(already_trained_steps, num_iter):
         iter_timer_start = time()
         ddp_model.train()
@@ -178,7 +182,7 @@ def train(rank,
                                   rank, ddp_sync_port,
                                   parallel_batches=train_args.eval_parallel_batch_size,
                                   use_images_instead_of_features=train_args.is_end_to_end,
-                                  beam_sizes=train_args.eval_beam_sizes)
+                                  beam_sizes=train_args.eval_beam_sizes, is_vizwiz=train_args.vizwiz)
             time_to_save = True
 
 
@@ -198,7 +202,7 @@ def distributed_train(rank,
                       world_size,
                       model_args,
                       optim_args,
-                      coco_dataset,
+                      dataset,
                       array_of_init_seeds,
                       model_max_len,
                       train_args,
@@ -225,8 +229,8 @@ def distributed_train(rank,
                                     N_dec=model_args.N_dec, num_heads=8, ff=2048,
                                     num_exp_enc_list=[32, 64, 128, 256, 512],
                                     num_exp_dec=16,
-                                    output_word2idx=coco_dataset.caption_word2idx_dict,
-                                    output_idx2word=coco_dataset.caption_idx2word_list,
+                                    output_word2idx=dataset.caption_word2idx_dict,
+                                    output_idx2word=dataset.caption_idx2word_list,
                                     max_seq_len=model_max_len, drop_args=model_args.drop_args,
                                     rank=rank)
     else:
@@ -235,8 +239,8 @@ def distributed_train(rank,
                                 N_dec=model_args.N_dec, num_heads=8, ff=2048,
                                 num_exp_enc_list=[32, 64, 128, 256, 512],
                                 num_exp_dec=16,
-                                output_word2idx=coco_dataset.caption_word2idx_dict,
-                                output_idx2word=coco_dataset.caption_idx2word_list,
+                                output_word2idx=dataset.caption_word2idx_dict,
+                                output_idx2word=dataset.caption_idx2word_list,
                                 max_seq_len=model_max_len, drop_args=model_args.drop_args,
                                 img_feature_dim=1536,
                                 rank=rank)
@@ -244,27 +248,38 @@ def distributed_train(rank,
 
     model.to(rank)
     ddp_model = DDP(model, device_ids=[rank])
-
-    if train_args.reinforce:
-        print("Reinforcement learning Mode")
-        data_loader = CocoDataLoader(coco_dataset=coco_dataset,
-                                     batch_size=train_args.batch_size,
-                                     num_procs=world_size,
-                                     array_of_init_seeds=array_of_init_seeds,
-                                     dataloader_mode='image_wise',
-                                     resize_image_size=img_size if train_args.is_end_to_end else None,
-                                     rank=rank,
-                                     verbose=True)
-    else:
-        print("Cross Entropy learning mode")
-        data_loader = CocoDataLoader(coco_dataset=coco_dataset,
-                                     batch_size=train_args.batch_size,
-                                     num_procs=world_size,
-                                     array_of_init_seeds=array_of_init_seeds,
-                                     dataloader_mode='caption_wise',
-                                     resize_image_size=img_size if train_args.is_end_to_end else None,
-                                     rank=rank,
-                                     verbose=True)
+    if train_args.vizwiz: 
+        print("VizWiz Dataloader in use")
+        data_loader = VizWizDataLoader(vizwiz_dataset=dataset, 
+                                        batch_size=train_args.batch_size,
+                                        num_procs=world_size,
+                                        array_of_init_seeds=array_of_init_seeds,
+                                        dataloader_mode='caption_wise',
+                                        resize_image_size=img_size if train_args.is_end_to_end else None,
+                                        rank=rank,
+                                        image_folder=path_args.image_folder,
+                                        verbose=True)
+    else: 
+        if train_args.reinforce:
+            print("Reinforcement learning Mode")
+            data_loader = CocoDataLoader(coco_dataset=dataset,
+                                        batch_size=train_args.batch_size,
+                                        num_procs=world_size,
+                                        array_of_init_seeds=array_of_init_seeds,
+                                        dataloader_mode='image_wise',
+                                        resize_image_size=img_size if train_args.is_end_to_end else None,
+                                        rank=rank,
+                                        verbose=True)
+        else:
+            print("Cross Entropy learning mode")
+            data_loader = CocoDataLoader(coco_dataset=dataset,
+                                        batch_size=train_args.batch_size,
+                                        num_procs=world_size,
+                                        array_of_init_seeds=array_of_init_seeds,
+                                        dataloader_mode='caption_wise',
+                                        resize_image_size=img_size if train_args.is_end_to_end else None,
+                                        rank=rank,
+                                        verbose=True)
 
     base_lr = 1.0
     if optim_args.optim_type == 'radam':
@@ -336,7 +351,7 @@ def distributed_train(rank,
           train_args,
           path_args,
           ddp_model,
-          coco_dataset, data_loader,
+          dataset, data_loader,
           optimizer, sched,
           model_max_len if not train_args.reinforce else train_args.scst_max_len,
           train_args.ddp_sync_port)
@@ -347,14 +362,14 @@ def distributed_train(rank,
 
 def spawn_train_processes(model_args,
                           optim_args,
-                          coco_dataset,
+                          dataset,
                           train_args,
                           path_args
                           ):
 
-    max_sequence_length = coco_dataset.max_seq_len + 20
+    max_sequence_length = dataset.max_seq_len + 20
     print("Max sequence length: " + str(max_sequence_length))
-    print("y vocabulary size: " + str(len(coco_dataset.caption_word2idx_dict)))
+    print("y vocabulary size: " + str(len(dataset.caption_word2idx_dict)))
 
     world_size = torch.cuda.device_count()
     print("Using - ", world_size, " processes / GPUs!")
@@ -366,7 +381,7 @@ def spawn_train_processes(model_args,
              args=(train_args.num_gpus,
                    model_args,
                    optim_args,
-                   coco_dataset,
+                   dataset,
                    array_of_init_seeds,
                    max_sequence_length,
                    train_args,
@@ -390,7 +405,7 @@ if __name__ == "__main__":
     parser.add_argument('--drop_other', type=float, default=0.1)
 
     parser.add_argument('--optim_type', type=optim_type_choice, default='adam')
-    parser.add_argument('--sched_type', type=scheduler_type_choice, default='fixed')
+    parser.add_argument('--sched_type', type=scheduler_type_choice, default='annealing')
 
     parser.add_argument('--lr', type=float, default=2e-4)
     parser.add_argument('--min_lr', type=float, default=5e-7)
@@ -402,7 +417,7 @@ if __name__ == "__main__":
     parser.add_argument('--num_accum', type=int, default=1)
     parser.add_argument('--num_gpus', type=int, default=1)
     parser.add_argument('--ddp_sync_port', type=int, default=12354)
-    parser.add_argument('--save_path', type=str, default='./github_ignore_material/saves/')
+    parser.add_argument('--save_path', type=str, default=None) #default='./github_ignore_material/saves/')
     parser.add_argument('--save_every_minutes', type=int, default=25)
     parser.add_argument('--how_many_checkpoints', type=int, default=1)
     parser.add_argument('--print_every_iter', type=int, default=1000)
@@ -412,11 +427,13 @@ if __name__ == "__main__":
     parser.add_argument('--eval_beam_sizes', type=str2list, default=[3])
 
     parser.add_argument('--reinforce', type=str2bool, default=False)
+    parser.add_argument('--vizwiz', type=str2bool, default=False)
     parser.add_argument('--scst_max_len', type=int, default=20)
     parser.add_argument('--num_epochs', type=int, default=5)
 
-    parser.add_argument('--image_path', type=str, default=None)
+    parser.add_argument('--image_folder', type=str, default=None)
     parser.add_argument('--captions_path', type=str, default='./github_ignore_material/raw_data/')
+    parser.add_argument('--vocab_path', type=str, default=None)
     parser.add_argument('--partial_load', type=str2bool, default=False)
     parser.add_argument('--backbone_save_path', type=str, default='')
     parser.add_argument('--body_save_path', type=str, default='')
@@ -462,7 +479,9 @@ if __name__ == "__main__":
 
     path_args = Namespace(save_path=args.save_path,
                           images_path=args.images_path,
+                          image_folder=args.image_folder,
                           captions_path=args.captions_path,
+                          vocab_path=args.vocab_path,
                           features_path=args.features_path,
                           backbone_save_path=args.backbone_save_path,
                           body_save_path=args.body_save_path,
@@ -483,7 +502,8 @@ if __name__ == "__main__":
                            reinforce=args.reinforce,
                            num_epochs=args.num_epochs,
                            partial_load=args.partial_load,
-                           scst_max_len=args.scst_max_len)
+                           scst_max_len=args.scst_max_len,
+                           vizwiz=args.vizwiz)
 
     print("train batch_size: " + str(args.batch_size))
     print("num_accum: " + str(args.num_accum))
@@ -491,20 +511,30 @@ if __name__ == "__main__":
     print("save_path: " + str(args.save_path))
     print("num_gpus: " + str(args.num_gpus))
 
-    coco_dataset = CocoDatasetKarpathy(
-        images_path=path_args.images_path,
-        coco_annotations_path=path_args.captions_path + "dataset_coco.json",
-        train2014_bboxes_path=path_args.captions_path + "train2014_instances.json",
-        val2014_bboxes_path=path_args.captions_path + "val2014_instances.json",
-        preproc_images_hdf5_filepath=path_args.preproc_images_hdf5_filepath if train_args.is_end_to_end else None,
-        precalc_features_hdf5_filepath=None if train_args.is_end_to_end else path_args.features_path,
-        limited_num_train_images=None,
-        limited_num_val_images=5000)
+    if train_args.vizwiz: 
+         if os.path.isfile(path_args.vocab_path):
+            with open("vocab/coco_vocab_idx_dict.json", "r") as vocab_json: 
+                coco_vocab_idx_dict = json.load(vocab_json)
+         else: 
+             coco_vocab_idx_dict = None
+         # Currently testing with val_split, normally should set to 1 with train being True
+         split = 2
+         dataset = VizWizDataset(2, train=False, coco_vocab_dict=coco_vocab_idx_dict)
+    else: 
+        dataset = CocoDatasetKarpathy(
+            images_path=path_args.images_path,
+            coco_annotations_path=path_args.captions_path + "dataset_coco.json",
+            train2014_bboxes_path=path_args.captions_path + "train2014_instances.json",
+            val2014_bboxes_path=path_args.captions_path + "val2014_instances.json",
+            preproc_images_hdf5_filepath=path_args.preproc_images_hdf5_filepath if train_args.is_end_to_end else None,
+            precalc_features_hdf5_filepath=None if train_args.is_end_to_end else path_args.features_path,
+            limited_num_train_images=None,
+            limited_num_val_images=5000)
 
     # train base model
     spawn_train_processes(model_args=model_args,
                           optim_args=optim_args,
-                          coco_dataset=coco_dataset,
+                          dataset=dataset,
                           train_args=train_args,
                           path_args=path_args
                           )

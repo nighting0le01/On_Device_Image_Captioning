@@ -130,6 +130,15 @@ class VizWizDataset(Dataset):
             return "validation"
         else: 
             return "test"
+        
+    def set_split(self, split): 
+        if split == "train": 
+            self.current_split = VizWizDataset.TrainSet_ID
+        elif split == "validation": 
+            self.current_split = VizWizDataset.ValidationSet_ID
+        else: 
+            self.current_split = VizWizDataset.TestSet_ID
+
 
     def __len__(self):
         if self.current_split == VizWizDataset.TrainSet_ID: 

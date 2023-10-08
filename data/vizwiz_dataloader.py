@@ -119,8 +119,9 @@ class VizWizDataLoader(TransparentDataLoader):
                     self.caption_y[idx_proc].append(caption_y_batch[idx_proc])
                     image_file_batch[idx_proc] = []
                     caption_y_batch[idx_proc] = []
+        self.num_batches = len(self.image_file_x[0])
 
-    def get_next_batch(self, verbose=False, get_also_image_path=False):
+    def get_next_batch(self, verbose=False, get_also_image_path=False, get_also_image_idxes=False):
 
         if self.batch_it[self.rank] >= self.num_batches:
             if verbose:
@@ -149,8 +150,11 @@ class VizWizDataLoader(TransparentDataLoader):
                   " avg_trg_seq_len: " + str(mean_trg_len))
             
         self.batch_it[self.rank] += 1
+        idxes = [] * len(img_file_batch)
         if get_also_image_path:
             return batch_x, batch_y, batch_x_num_pads, batch_y_num_pads, img_file_batch
+        elif get_also_image_idxes:
+            return batch_x, batch_y, batch_x_num_pads, batch_y_num_pads, idxes
         else: 
             return batch_x, batch_y, batch_x_num_pads, batch_y_num_pads
         
