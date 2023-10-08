@@ -197,6 +197,32 @@ class VizWizDataLoader(TransparentDataLoader):
         self.debug_counter += 1
         return torch.stack(image_tensors, dim=0), None
 
+    def get_captions_by_idx(self, idx, dataset_split):
+        if dataset_split == VizWizDataset.TestSet_ID:
+            raise ValueError("No captions exist for the VizWiz test set")
+        elif dataset_split == VizWizDataset.ValidationSet_ID:
+            caption = self.dataset.val_list[idx]["tokenized_caption"]
+        else:
+            caption = self.dataset.train_list[idx]["tokenized_caption"]
+        return caption
+
+    def get_images_by_idx(self, idx, dataset_split, is_tensor=True):
+        if dataset_split == VizWizDataset.TestSet_ID:
+            image_file = self.dataset.test_list[idx]["image_path"]
+        elif dataset_split == VizWizDataset.ValidationSet_ID:
+            image_file = self.dataset.val_list[idx]["image_path"]
+        else:
+            image_file = self.dataset.train_list[idx]["image_path"]
+        pil_image = PIL_Image.open(image_file)
+        if pil_image.mode != 'RGB':
+            pil_image = PIL_Image.new("RGB", pil_image.size)
+        if not is_tensor: 
+            return pil_image
+        else: 
+            preprocess_pil_image = self.image_preprocess_1(pil_image)
+            tens_image_1 = torchvision.transforms.ToTensor()(preprocess_pil_image)
+            tens_image_2 = self.image_preprocess_2(tens_image_1)
+            return tens_image_2
 
 
     def preprocess(self, caption):
