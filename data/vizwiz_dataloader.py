@@ -22,7 +22,7 @@ print = functools.partial(print, flush=True)
 class VizWizDataLoader(TransparentDataLoader):
     NOT_DEFINED = -1
 
-    def __init__(self, vizwiz_dataset,
+    def __init__(self, vizwiz_dataset: VizWizDataset,
                        array_of_init_seeds,
                        batch_size, rank=0, num_procs=1,
                        dataloader_mode='caption_wise',
@@ -49,11 +49,11 @@ class VizWizDataLoader(TransparentDataLoader):
         self.num_procs = num_procs
         self.num_batches = VizWizDataLoader.NOT_DEFINED
         self.batch_it = []
-        self.image_idx_x = []
+        self.image_file_x = []
         self.caption_y = []
         for idx_proc in range(num_procs):
             self.batch_it.append(0)
-            self.image_idx_x.append([])
+            self.image_file_x.append([])
             self.caption_y.append([])
 
     
@@ -64,8 +64,156 @@ class VizWizDataLoader(TransparentDataLoader):
         self.image_preprocess_2 = torchvision.transforms.Compose(preprocess_layers_2)
         self.debug_counter = 0
         self.set_epoch_it(epoch=0, verbose=verbose)
+
     def init_epoch(self, epoch_it, verbose=False):
         init_timer_start = time()
-
         batch_size = self.batch_size
         random.seed(self.array_of_init_seeds[epoch_it])
+
+        if self.dataset.split_name() == "train":
+            random.shuffle(self.dataset.train_list)
+        elif self.dataset.split_name() == "validation":
+            random.shuffle(self.dataset.val_list)
+        else: 
+            random.shuffle(self.dataset.test_list)
+
+
+        self.batch_it = []
+        self.image_file_x = []
+        self.caption_y = []
+        for idx_proc in range(self.num_procs):
+            self.batch_it.append(0)
+            self.image_file_x.append([])
+            self.caption_y.append([])
+
+        tailing_elements = len(self.dataset) % (batch_size * self.num_procs)
+        if tailing_elements != 0:
+            self.dataset = self.dataset[:-tailing_elements]
+
+        image_file_batch = []
+        caption_y_batch = []
+        for idx_proc in range(self.num_procs):
+            image_file_batch.append([])
+            caption_y_batch.append([])
+        i = 0
+
+        while i < len(self.dataset):
+            for idx_proc in range(self.num_procs):
+                img_file, caption = self.dataset[i]["image_path"], self.dataset[i]["tokenized_caption"]
+                image_file_batch[idx_proc].append(img_file)
+                preprocessed_caption = self.preprocess(caption)
+                caption_y_batch[idx_proc].append(preprocessed_caption)
+                i += 1
+            if i % batch_size == 0:
+                for idx_proc in range(self.num_procs):
+                    self.image_file_x[idx_proc].append(image_file_batch[idx_proc])
+                    self.caption_y[idx_proc].append(caption_y_batch[idx_proc])
+                    image_file_batch[idx_proc] = []
+                    caption_y_batch[idx_proc] = []
+
+    def get_next_batch(self, verbose=False, get_also_image_path=False):
+
+        if self.batch_it[self.rank] >= self.num_batches:
+            if verbose:
+                print("Proc: " + str(self.rank) + " re-initialization")
+            self.epoch_it += 1
+            if self.epoch_it >= len(self.array_of_init_seeds):
+                raise Exception("Please increase number of random seed in the array of initialization seed.")
+
+            self.init_epoch(epoch_it=self.epoch_it, verbose=verbose)
+        img_file_batch = self.image_file_x[self.rank][self.batch_it[self.rank]]
+        batch_x, batch_x_num_pads = self.get_padded_img_batch(img_file_batch)
+        
+        caption_str_batch = copy.copy(self.caption_y[self.rank][self.batch_it[self.rank]])
+        caption_encoded_batch = language_utils.convert_allsentences_word2idx(caption_str_batch, 
+                                                                             self.dataset.caption_word2idx_dict)
+        batch_y, batch_y_num_pads = self.add_pad_according_to_batch(caption_encoded_batch, self.dataset.caption_word2idx_dict['PAD'])
+        batch_y = torch.tensor(batch_y)
+
+        if verbose:
+            mean_src_len = 'Constant'
+            mean_trg_len = int(
+                    sum([(len(batch_y[i]) - batch_y_num_pads[i]) for i in range(len(batch_y))]) / len(batch_y))
+            print(str(self.rank) + "] " + __name__ + ") batch " + str(self.batch_it[self.rank]) + " / " +
+                  str(self.num_batches) + " batch_size: " + str(len(batch_x)) + " epoch: " + str(self.epoch_it) +
+                  " avg_src_seq_len: " + str(mean_src_len) +
+                  " avg_trg_seq_len: " + str(mean_trg_len))
+            
+        self.batch_it[self.rank] += 1
+        if get_also_image_path:
+            return batch_x, batch_y, batch_x_num_pads, batch_y_num_pads, img_file_batch
+        else: 
+            return batch_x, batch_y, batch_x_num_pads, batch_y_num_pads
+        
+    
+    def get_batch_samples(self, dataset_split, idx_list):
+        batch_captions_y = []
+        img_batch = []
+        for i in range(len(idx_list)):
+            idx = idx_list[i]
+            if dataset_split == VizWizDataset.ValidationSet_ID:
+                caption = self.dataset.val_list[idx]["tokenized_caption"]
+            if dataset_split == VizWizDataset.TrainSet_ID:
+                caption = self.dataset.train_list[idx]["tokenized_caption"]
+
+            preprocessed_caption = self.preprocess(caption)
+            if dataset_split != VizWizDataset.TestSet_ID:
+                batch_captions_y.append(preprocessed_caption)
+
+            if dataset_split == VizWizDataset.TestSet_ID:
+               img_batch.append(self.dataset.test_list[idx]["image_path"])
+            elif dataset_split == VizWizDataset.ValidationSet_ID:
+               img_batch.append(self.dataset.val_list[idx]["image_path"])
+            else:
+               img_batch.append(self.dataset.train_list[idx]["image_path"])
+
+        if self.use_images_instead_of_features:
+            batch_x, batch_x_num_pads = self.get_padded_img_batch(img_batch)
+
+        if dataset_split != VizWizDataset.TestSet_ID:
+            batch_caption_y_encoded = language_utils. \
+                convert_allsentences_word2idx(batch_captions_y,
+                                            self.dataset.caption_word2idx_dict)
+            batch_y, batch_y_num_pads = self.add_pad_according_to_batch(batch_caption_y_encoded,
+                                                                        self.dataset.get_pad_token_idx())
+        batch_y = torch.tensor(batch_y)
+        if dataset_split == VizWizDataset.TestSet_ID:
+            return batch_x, batch_x_num_pads
+        else: 
+            return batch_x, batch_y, batch_x_num_pads, batch_y_num_pads
+
+        
+    def get_padded_img_batch(self, img_files):
+        image_tensors = []
+        for image_file in img_files: 
+            pil_image = PIL_Image.open(image_file)
+            if pil_image.mode != 'RGB':
+                pil_image = PIL_Image.new("RGB", pil_image.size)
+            preprocess_pil_image = self.image_preprocess_1(pil_image)
+            tens_image_1 = torchvision.transforms.ToTensor()(preprocess_pil_image)
+            tens_image_2 = self.image_preprocess_2(tens_image_1)
+            image_tensors.append(tens_image_2)
+
+        self.debug_counter += 1
+        return torch.stack(image_tensors, dim=0), None
+
+
+
+    def preprocess(self, caption):
+        if isinstance(caption, str):
+            caption = language_utils.lowercase_and_clean_trailing_spaces([caption])
+            caption = language_utils.add_space_between_non_alphanumeric_symbols(caption)
+            caption = language_utils.remove_punctuations(caption)
+            caption = [self.dataset.get_sos_token_str()] + language_utils.tokenize(caption)[0] + [self.dataset.get_eos_token_str()]
+        preprocessed_tokenized_caption = []
+        for word in caption:
+            if word not in self.dataset.caption_word2idx_dict.keys():
+                preprocessed_tokenized_caption.append(self.dataset.get_unk_token_str())
+            else:
+                preprocessed_tokenized_caption.append(word)
+        return preprocessed_tokenized_caption
+
+    def preprocess_list(self, caption_list):
+        for i in range(len(caption_list)):
+            caption_list[i] = self.preprocess(caption_list[i])
+        return caption_list

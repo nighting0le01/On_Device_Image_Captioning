@@ -18,18 +18,19 @@ class VizWizDataset(Dataset):
     def __init__(self,
                  current_split: int,
                  vizwiz_annotations_dir: str = "/usr0/home/nvaikunt/On_Device_Image_Captioning/VizWizData/annotations",
+                 new_vocab: bool = True, 
                  annotations_filtered: bool = False,
                  train: bool = True,
                  val: bool = True,
                  test: bool = False,
                  verbose: bool = False,
                  dict_min_occurrences=5,
+                 coco_vocab_dict: dict = None
                  ):
         
         super(Dataset, self).__init__()
         if not train and not val:
             raise ValueError("Need at least train or val to be true")
-        splits  = [train, val, test]
         if not annotations_filtered: 
             if train: 
                 train_path = os.path.join(vizwiz_annotations_dir, "train.json")
@@ -109,13 +110,24 @@ class VizWizDataset(Dataset):
         discovered_words.sort()
         self.caption_word2idx_dict = dict()
         self.caption_idx2word_list = []
-        for i in range(len(discovered_words)):
-            self.caption_word2idx_dict[discovered_words[i]] = i
-            self.caption_idx2word_list.append(discovered_words[i])
+        if new_vocab: 
+            for i in range(len(discovered_words)):
+                self.caption_word2idx_dict[discovered_words[i]] = i
+                self.caption_idx2word_list.append(discovered_words[i])
+        else: 
+            self.caption_word2idx_dict
+            self.caption_idx2word_list
         if verbose:
             print("There are " + str(self.num_caption_vocab) + " vocabs in dict")
 
-        
+    def split_name(self):
+        if self.current_split == VizWizDataset.TrainSet_ID: 
+            return "train"
+        elif self.current_split == VizWizDataset.ValidationSet_ID: 
+            return "validation"
+        else: 
+            return "test"
+
     def __len__(self):
         if self.current_split == VizWizDataset.TrainSet_ID: 
             return len(self.train_list)
