@@ -1,6 +1,8 @@
 import numpy as np
 import random
 import copy
+import json
+import os
 import torch
 from time import time
 
@@ -27,6 +29,7 @@ class VizWizDataLoader(TransparentDataLoader):
                        batch_size, rank=0, num_procs=1,
                        dataloader_mode='caption_wise',
                        resize_image_size=None,
+                       image_folder = "/usr0/home/nvaikunt/On_Device_Image_Captioning/VizWizData/val",
                        verbose=False):
         super(TransparentDataLoader, self).__init__()
         assert (dataloader_mode == 'caption_wise' or dataloader_mode == 'image_wise'), \
@@ -34,6 +37,7 @@ class VizWizDataLoader(TransparentDataLoader):
 
         self.dataset = vizwiz_dataset
         self.dataloader_mode = dataloader_mode
+        self.image_folder = image_folder
 
         self.num_procs = num_procs
         self.rank = rank
@@ -88,7 +92,12 @@ class VizWizDataLoader(TransparentDataLoader):
 
         tailing_elements = len(self.dataset) % (batch_size * self.num_procs)
         if tailing_elements != 0:
-            self.dataset = self.dataset[:-tailing_elements]
+            if self.dataset.split_name() == "train":
+                self.dataset.train_list = self.dataset.train_list[:-tailing_elements]
+            elif self.dataset.split_name() == "validation":
+                self.dataset.val_list = self.dataset.val_list[:-tailing_elements]
+            else: 
+                self.dataset.test_list = self.dataset.test_list[:-tailing_elements]
 
         image_file_batch = []
         caption_y_batch = []
@@ -186,7 +195,8 @@ class VizWizDataLoader(TransparentDataLoader):
     def get_padded_img_batch(self, img_files):
         image_tensors = []
         for image_file in img_files: 
-            pil_image = PIL_Image.open(image_file)
+            full_image_path  = os.path.join(self.image_folder, image_file)
+            pil_image = PIL_Image.open(full_image_path)
             if pil_image.mode != 'RGB':
                 pil_image = PIL_Image.new("RGB", pil_image.size)
             preprocess_pil_image = self.image_preprocess_1(pil_image)
@@ -213,7 +223,8 @@ class VizWizDataLoader(TransparentDataLoader):
             image_file = self.dataset.val_list[idx]["image_path"]
         else:
             image_file = self.dataset.train_list[idx]["image_path"]
-        pil_image = PIL_Image.open(image_file)
+        full_image_path  = os.path.join(self.image_folder, image_file)
+        pil_image = PIL_Image.open(full_image_path)
         if pil_image.mode != 'RGB':
             pil_image = PIL_Image.new("RGB", pil_image.size)
         if not is_tensor: 
@@ -243,3 +254,41 @@ class VizWizDataLoader(TransparentDataLoader):
         for i in range(len(caption_list)):
             caption_list[i] = self.preprocess(caption_list[i])
         return caption_list
+    
+if __name__ == "__main__":
+
+    with open("vocab/coco_vocab_idx_dict.json", "r") as vocab_json: 
+        coco_vocab_idx_dict = json.load(vocab_json)
+    
+    dataset_w_coco_vocab = VizWizDataset(2, train=False, coco_vocab_dict=coco_vocab_idx_dict)
+    val_dataloader_rank_0 = VizWizDataLoader(dataset_w_coco_vocab, array_of_init_seeds=[42], batch_size=8,
+                                      resize_image_size=384,
+                                      num_procs=2, 
+                                      rank=0)
+    print(val_dataloader_rank_0.get_batch_it())
+    image_tensor, text_tensor, _, _ = val_dataloader_rank_0.get_next_batch(verbose=True)
+    print(image_tensor.shape, text_tensor.shape)
+    print(val_dataloader_rank_0.get_batch_it())
+
+    val_dataloader_rank_1 = VizWizDataLoader(dataset_w_coco_vocab, array_of_init_seeds=[42], batch_size=8,
+                                      resize_image_size=384,
+                                      num_procs=2, 
+                                      rank=1)
+    
+    print(val_dataloader_rank_1.get_batch_it())
+    image_tensor, text_tensor, _, _ = val_dataloader_rank_1.get_next_batch(verbose=True)
+    print(image_tensor.shape, text_tensor.shape)
+    print(val_dataloader_rank_1.get_batch_it())
+
+    print(val_dataloader_rank_0.get_batch_it())
+    image_tensor, text_tensor, _, _ = val_dataloader_rank_0.get_next_batch(verbose=True)
+    print(image_tensor.shape, text_tensor.shape)
+    print(val_dataloader_rank_0.get_batch_it())
+
+        
+    print(val_dataloader_rank_1.get_batch_it())
+    image_tensor, text_tensor, _, _ = val_dataloader_rank_1.get_next_batch(verbose=True)
+    print(image_tensor.shape, text_tensor.shape)
+    print(val_dataloader_rank_1.get_batch_it())
+
+

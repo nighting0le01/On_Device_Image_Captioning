@@ -5,6 +5,7 @@ from pathlib import Path
 sys.path.append(str(Path(__file__).resolve().parent.parent))
 from utils import language_utils
 from torch.utils.data import Dataset
+from data.coco_dataset import CocoDatasetKarpathy
 import os 
 
 import functools
@@ -18,7 +19,6 @@ class VizWizDataset(Dataset):
     def __init__(self,
                  current_split: int,
                  vizwiz_annotations_dir: str = "/usr0/home/nvaikunt/On_Device_Image_Captioning/VizWizData/annotations",
-                 new_vocab: bool = True, 
                  annotations_filtered: bool = False,
                  train: bool = True,
                  val: bool = True,
@@ -110,13 +110,16 @@ class VizWizDataset(Dataset):
         discovered_words.sort()
         self.caption_word2idx_dict = dict()
         self.caption_idx2word_list = []
-        if new_vocab: 
+        if coco_vocab_dict is None: 
             for i in range(len(discovered_words)):
                 self.caption_word2idx_dict[discovered_words[i]] = i
                 self.caption_idx2word_list.append(discovered_words[i])
         else: 
-            self.caption_word2idx_dict
-            self.caption_idx2word_list
+            self.caption_word2idx_dict = coco_vocab_dict
+            idx2word_dict = {v: k for k, v in coco_vocab_dict.items()}
+            self.caption_idx2word_list = [""] * len(idx2word_dict)
+            for idx in idx2word_dict.keys(): 
+                self.caption_idx2word_list[idx] = idx2word_dict[idx]
         if verbose:
             print("There are " + str(self.num_caption_vocab) + " vocabs in dict")
 
@@ -247,4 +250,28 @@ if __name__ == "__main__":
     print(dataset[7])
     print(dataset.caption_word2idx_dict)
     print(dataset.caption_idx2word_list)
+    print(len(dataset.caption_word2idx_dict))
+    print(len(dataset.caption_idx2word_list))
+    """
+    coco_dataset = CocoDatasetKarpathy(
+        images_path=None,
+        train2014_bboxes_path = None, 
+        val2014_bboxes_path=None, 
+        precalc_features_hdf5_filepath=None, 
+        coco_annotations_path="/usr0/home/nvaikunt/On_Device_Image_Captioning/coco_annotations/dataset_coco.json"
+    )
+
+    coco_vocab_idx_dict = coco_dataset.caption_word2idx_dict
+    with open("vocab/coco_vocab_idx_dict.json", "w") as vocab_json: 
+        json.dump(coco_vocab_idx_dict, vocab_json)
+    """
+    with open("vocab/coco_vocab_idx_dict.json", "r") as vocab_json: 
+        coco_vocab_idx_dict = json.load(vocab_json)
+    
+    dataset_w_new_vocab = VizWizDataset(2, train=False, coco_vocab_dict=coco_vocab_idx_dict)
+    print(dataset_w_new_vocab.caption_word2idx_dict)
+    print(dataset_w_new_vocab.caption_idx2word_list)
+    print(len(dataset_w_new_vocab.caption_word2idx_dict))
+    print(len(dataset_w_new_vocab.caption_idx2word_list))
+
     

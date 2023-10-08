@@ -160,4 +160,5 @@ cython_debug/
 #.idea/
 
 VizWizData/
-*json
+pretrained_weights/
+coco_annotations/
