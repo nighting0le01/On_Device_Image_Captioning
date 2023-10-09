@@ -39,7 +39,7 @@ def train(rank,
           train_args,
           path_args,
           ddp_model,
-          coco_dataset, data_loader,
+          dataset, data_loader,
           optimizer, sched,
           max_len,
           ddp_sync_port):
@@ -53,8 +53,8 @@ def train(rank,
         running_reward = 0
         running_reward_base = 0
 
-        training_references = coco_dataset.get_all_images_captions(CocoDatasetKarpathy.TrainSet_ID)
-        reinforce_reward = ReinforceCiderReward(training_references, coco_dataset.get_eos_token_str(),
+        training_references = dataset.get_all_images_captions(CocoDatasetKarpathy.TrainSet_ID)
+        reinforce_reward = ReinforceCiderReward(training_references, dataset.get_eos_token_str(),
                                                 num_sampled_captions, rank)
 
     algorithm_start_time = time()
@@ -77,6 +77,7 @@ def train(rank,
                                                      (((it + 1) % train_args.print_every_iter == 0) or
                                                       (it + 1) % data_loader.get_num_batches() == 0),
                                              get_also_image_idxes=True)
+
             batch_input_x = batch_input_x.to(rank)
             batch_target_y = batch_target_y.to(rank)
             # create a list of sub-batches so tensors can be deleted right-away after being used
@@ -86,7 +87,7 @@ def train(rank,
                                       dec_x_num_pads=batch_target_y_num_pads,
                                       apply_softmax=False)
 
-            loss = loss_function(pred_logprobs, batch_target_y[:, 1:], coco_dataset.get_pad_token_idx())
+            loss = loss_function(pred_logprobs, batch_target_y[:, 1:], dataset.get_pad_token_idx())
 
             running_loss += loss.item()
             loss.backward()
@@ -96,17 +97,18 @@ def train(rank,
                                                      (((it + 1) % train_args.print_every_iter == 0) or
                                                       (it + 1) % data_loader.get_num_batches() == 0),
                                              get_also_image_idxes=True)
+         
             batch_input_x = batch_input_x.to(rank)
             sampling_search_kwargs = {'sample_max_seq_len': train_args.scst_max_len,
                                       'how_many_outputs': num_sampled_captions,
-                                      'sos_idx': coco_dataset.get_sos_token_idx(),
-                                      'eos_idx': coco_dataset.get_eos_token_idx()}
+                                      'sos_idx': dataset.get_sos_token_idx(),
+                                      'eos_idx': dataset.get_eos_token_idx()}
             all_images_pred_idx, all_images_logprob = ddp_model(enc_x=batch_input_x,
                                                                 enc_x_num_pads=batch_input_x_num_pads,
                                                                 mode='sampling', **sampling_search_kwargs)
 
             all_images_pred_caption = [language_utils.convert_allsentences_idx2word(
-                one_image_pred_idx, coco_dataset.caption_idx2word_list) \
+                one_image_pred_idx, dataset.caption_idx2word_list) \
                 for one_image_pred_idx in all_images_pred_idx]
 
             reward_loss, reward, reward_base \
@@ -168,17 +170,17 @@ def train(rank,
 
         if ((it + 1) % data_loader.get_num_batches() == 0) or ((it + 1) % train_args.eval_every_iter == 0):
             if not train_args.reinforce:
-                compute_evaluation_loss(loss_function, ddp_model, coco_dataset, data_loader,
-                                        coco_dataset.val_num_images, sub_batch_size=train_args.eval_parallel_batch_size,
-                                        dataset_split=CocoDatasetKarpathy.ValidationSet_ID,
+                compute_evaluation_loss(loss_function, ddp_model, dataset, data_loader,
+                                        dataset.val_num_images, sub_batch_size=train_args.eval_parallel_batch_size,
+                                        dataset_split=dataset.ValidationSet_ID,
                                         rank=rank, verbose=True)
 
             if rank == 0:
                 print("Evaluation on Validation Set")
-            evaluate_model_on_set(ddp_model, coco_dataset.caption_idx2word_list,
-                                  coco_dataset.get_sos_token_idx(), coco_dataset.get_eos_token_idx(),
-                                  coco_dataset.val_num_images, data_loader,
-                                  CocoDatasetKarpathy.ValidationSet_ID, max_len,
+            evaluate_model_on_set(ddp_model, dataset.caption_idx2word_list,
+                                  dataset.get_sos_token_idx(), dataset.get_eos_token_idx(),
+                                  dataset.val_num_images, data_loader,
+                                  dataset.ValidationSet_ID, max_len,
                                   rank, ddp_sync_port,
                                   parallel_batches=train_args.eval_parallel_batch_size,
                                   use_images_instead_of_features=train_args.is_end_to_end,
@@ -423,7 +425,7 @@ if __name__ == "__main__":
     parser.add_argument('--print_every_iter', type=int, default=1000)
 
     parser.add_argument('--eval_every_iter', type=int, default=999999)
-    parser.add_argument('--eval_parallel_batch_size', type=int, default=16)
+    parser.add_argument('--eval_parallel_batch_size', type=int, default=8)
     parser.add_argument('--eval_beam_sizes', type=str2list, default=[3])
 
     parser.add_argument('--reinforce', type=str2bool, default=False)

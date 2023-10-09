@@ -159,9 +159,10 @@ class VizWizDataLoader(TransparentDataLoader):
             return batch_x, batch_y, batch_x_num_pads, batch_y_num_pads
         
     
-    def get_batch_samples(self, dataset_split, idx_list):
+    def get_batch_samples(self, dataset_split, img_idx_batch_list):
         batch_captions_y = []
         img_batch = []
+        idx_list = img_idx_batch_list
         for i in range(len(idx_list)):
             idx = idx_list[i]
             if dataset_split == VizWizDataset.ValidationSet_ID:
@@ -180,8 +181,8 @@ class VizWizDataLoader(TransparentDataLoader):
             else:
                img_batch.append(self.dataset.train_list[idx]["image_path"])
 
-        if self.use_images_instead_of_features:
-            batch_x, batch_x_num_pads = self.get_padded_img_batch(img_batch)
+        
+        batch_x, batch_x_num_pads = self.get_padded_img_batch(img_batch)
 
         if dataset_split != VizWizDataset.TestSet_ID:
             batch_caption_y_encoded = language_utils. \
