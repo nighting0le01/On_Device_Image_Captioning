@@ -25,7 +25,8 @@ class VizWizDataset(Dataset):
                  test: bool = False,
                  verbose: bool = False,
                  dict_min_occurrences=5,
-                 coco_vocab_dict: dict = None
+                 coco_vocab_dict: dict = None, 
+                 max_seq_length=54
                  ):
         
         super(Dataset, self).__init__()
@@ -63,20 +64,30 @@ class VizWizDataset(Dataset):
         self.train_list = []
         self.val_list = []
         self.test_list = []
+        self.max_seq_len = max_seq_length
         tokenized_captions_list = []
         if train: 
             for key in self.train_dict.keys():
                 tokenized_captions_list.append(self.train_dict[key]['tokenized_caption'])
+                if len(self.train_dict[key]['tokenized_caption']) > self.max_seq_len: 
+                    self.train_dict[key]['tokenized_caption'] = self.train_dict[key]['tokenized_caption'][:self.max_seq_len-1] + ["EOS"]
                 self.train_list.append(self.train_dict[key])
         if val: 
             for key in self.val_dict.keys():
                 if not train: 
                     tokenized_captions_list.append(self.val_dict[key]['tokenized_caption'])
+                if len(self.val_dict[key]['tokenized_caption']) > self.max_seq_len: 
+                    self.val_dict[key]['tokenized_caption'] = self.val_dict[key]['tokenized_caption'][:self.max_seq_len-1] + ["EOS"]
                 self.val_list.append(self.val_dict[key])
         if test: 
             for key in self.test_dict.keys():
+                if len(self.test_dict[key]['tokenized_caption']) > self.max_seq_len: 
+                    self.test_dict[key]['tokenized_caption'] = self.test_dict[key]['tokenized_caption'][:self.max_seq_len-1] + ["EOS"]
                 self.test_list.append(self.test_dict[key])
-        
+
+        self.train_num_images  = len(self.train_list)     
+        self.val_num_images = len(self.val_list)
+        self.test_num_images = len(self.test_list)
         counter_dict = dict()
         for i in range(len(tokenized_captions_list)):
             for word in tokenized_captions_list[i]:
@@ -96,12 +107,11 @@ class VizWizDataset(Dataset):
 
         
         self.num_caption_vocab = 4
-        self.max_seq_len = 0
+     
         discovered_words = ['PAD', 'SOS', 'EOS', 'UNK']
         for i in range(len(tokenized_captions_list)):
             caption = tokenized_captions_list[i]
-            if len(caption) > self.max_seq_len:
-                self.max_seq_len = len(caption)
+    
             for word in caption:
                 if (word not in discovered_words) and (not word in less_than_min_occurrences_set):
                     discovered_words.append(word)
@@ -282,5 +292,6 @@ if __name__ == "__main__":
     print(dataset_w_new_vocab.caption_idx2word_list)
     print(len(dataset_w_new_vocab.caption_word2idx_dict))
     print(len(dataset_w_new_vocab.caption_idx2word_list))
+    
 
     
