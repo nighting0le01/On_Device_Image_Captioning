@@ -40,8 +40,8 @@ def compute_FLOPS(model,img_size,
     model_wrapped =  Wrapper()
     model_wrapped.model = model
     # input = torch.randn(1, 3, 224, 224)
-    macs, params = profile(model_wrapped, inputs=(input_data, ))
-    print(macs*2)
+    flops, params = profile(model_wrapped, inputs=(input_data, ))
+    print(flops)
     # flop = FlopCountAnalysis(model_wrapped, input_data)
     # print(flop_count_table(flop, max_depth=4))
     # print(flop_count_str(flop))

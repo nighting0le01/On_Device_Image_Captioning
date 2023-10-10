@@ -246,7 +246,7 @@ def distributed_train(rank,
                                 max_seq_len=model_max_len, drop_args=model_args.drop_args,
                                 img_feature_dim=1536,
                                 rank=rank)
-    checkpoint = torch.load("/home/arpitsah/Desktop/Fall-2023/odml/On_Device_Image_Captioning/pretrained_weights/rf_model.pth")
+    checkpoint = torch.load(path_args.pretrain_checkpoint)
     model.load_state_dict(checkpoint['model_state_dict'])
     print("Model loaded ...")
     model.to(rank)
@@ -447,6 +447,7 @@ if __name__ == "__main__":
     parser.add_argument('--images_path', type=str, default="./github_ignore_material/raw_data/")
     parser.add_argument('--preproc_images_hdf5_filepath', type=str, default=None)
     parser.add_argument('--features_path', type=str, default="./github_ignore_material/raw_data/")
+    parser.add_argument('--pretrain_checkpoint', type=str, default="/home/arpitsah/Desktop/Fall-2023/odml/On_Device_Image_Captioning/pretrained_weights/rf_model.pth")
 
     parser.add_argument('--seed', type=int, default=1234)
 
@@ -490,7 +491,8 @@ if __name__ == "__main__":
                           features_path=args.features_path,
                           backbone_save_path=args.backbone_save_path,
                           body_save_path=args.body_save_path,
-                          preproc_images_hdf5_filepath=args.preproc_images_hdf5_filepath
+                          preproc_images_hdf5_filepath=args.preproc_images_hdf5_filepath,
+                          pretrain_checkpoint=args.pretrain_checkpoint
                           )
 
     train_args = Namespace(is_end_to_end=args.is_end_to_end,
@@ -523,8 +525,8 @@ if __name__ == "__main__":
          else: 
              coco_vocab_idx_dict = None
          # Currently testing with val_split, normally should set to 1 with train being True
-         split = 2
-         dataset = VizWizDataset(2, train=False, coco_vocab_dict=coco_vocab_idx_dict)
+         split = 1
+         dataset = VizWizDataset(split, train=True, coco_vocab_dict=coco_vocab_idx_dict)
     else: 
         dataset = CocoDatasetKarpathy(
             images_path=path_args.images_path,
