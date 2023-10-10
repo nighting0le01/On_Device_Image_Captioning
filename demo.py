@@ -21,6 +21,7 @@ if __name__ == "__main__":
     parser.add_argument('--N_dec', type=int, default=3)
     parser.add_argument('--max_seq_len', type=int, default=74)
     parser.add_argument('--load_path', type=str, default='/home/arpitsah/Desktop/Fall-2023/odml/On_Device_Image_Captioning/pretrained_weights/rf_model.pth')
+    parser.add_argument('--load_path_vizWiz', type=str, default='/home/arpitsah/Desktop/Fall-2023/odml/On_Device_Image_Captioning/vizWiz_Weights/pretrained_weightscheckpoint_2023-10-10-16:26:11_epoch4it1968bs8_xe_.pth')
     parser.add_argument('--image_paths', type=str,
                         default=['On_Device_Image_Captioning/demo_material/tatin.jpg',
                                  'On_Device_Image_Captioning/demo_material/micheal.jpg',
@@ -28,6 +29,8 @@ if __name__ == "__main__":
                                  'On_Device_Image_Captioning/demo_material/cat_girl.jpg'],
                         nargs='+')
     parser.add_argument('--beam_size', type=int, default=5)
+    parser.add_argument('--Vizwiz', type=bool, default=False)
+    
 
     args = parser.parse_args()
 
@@ -66,7 +69,10 @@ if __name__ == "__main__":
                                 output_idx2word=coco_tokens['idx2word_list'],
                                 max_seq_len=args.max_seq_len, drop_args=model_args.drop_args,
                                 rank='cpu')
-    checkpoint = torch.load(args.load_path)
+    if not args.Vizwiz:
+        checkpoint = torch.load(args.load_path)
+    else:   
+        checkpoint = torch.load(args.load_path_vizWiz)
     model.load_state_dict(checkpoint['model_state_dict'])
     print("Model loaded ...")
 

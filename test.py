@@ -93,7 +93,7 @@ def evaluate_model(ddp_model,
                    use_images_instead_of_features=False,
 
                    verbose=True,
-                   stanford_model_path="./eval/get_stanford_models.sh"):
+                   stanford_model_path="/home/arpitsah/Desktop/Fall-2023/odml/On_Device_Image_Captioning/eval/get_stanford_models.sh"):
 
     start_time = time()
 
@@ -115,7 +115,7 @@ def evaluate_model(ddp_model,
                 to_idx = (sb_it + 1) * sb_size
 
             if use_images_instead_of_features:
-                sub_batch_x = [data_loader.get_images_by_idx(i, dataset_split=dataset_split, transf_mode='test').unsqueeze(0)
+                sub_batch_x = [data_loader.get_images_by_idx(i, dataset_split=dataset_split).unsqueeze(0)
                          for i in list(range(from_idx, to_idx))]
                 sub_batch_x = torch.cat(sub_batch_x).to(rank)
                 sub_batch_x_num_pads = [0] * sub_batch_x.size(0)
@@ -125,7 +125,7 @@ def evaluate_model(ddp_model,
                 sub_batch_x = torch.nn.utils.rnn.pad_sequence(sub_batch_x, batch_first=True).to(rank)
                 sub_batch_x_num_pads = compute_num_pads(sub_batch_x)
 
-            validate_y += [data_loader.get_all_image_captions_by_idx(i, dataset_split=dataset_split) \
+            validate_y += [data_loader.get_captions_by_idx(i, dataset_split=dataset_split) \
                            for i in list(range(from_idx, to_idx))]
 
             beam_search_kwargs = {'beam_size': beam_size,
@@ -187,7 +187,7 @@ def evaluate_model_on_set(ddp_model,
                           rank, ddp_sync_port,
                           parallel_batches=16,
                           beam_sizes=[1],
-                          stanford_model_path='./eval/get_stanford_models.sh',
+                          stanford_model_path='/home/arpitsah/Desktop/Fall-2023/odml/On_Device_Image_Captioning/eval/get_stanford_models.sh',
                           use_images_instead_of_features=False,
                           get_predictions=False, is_vizwiz=False):
 
@@ -399,7 +399,7 @@ if __name__ == "__main__":
 
     parser.add_argument('--num_gpus', type=int, default=1)
     parser.add_argument('--ddp_sync_port', type=int, default=12354)
-    parser.add_argument('--save_model_path', type=str, default='./github_ignore_material/saves/')
+    parser.add_argument('--save_model_path', type=str, default='./github_ignore_material/')
 
     parser.add_argument('--eval_parallel_batch_size', type=int, default=16)
     parser.add_argument('--eval_beam_sizes', type=str2list, default=[3])

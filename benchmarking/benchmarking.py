@@ -19,8 +19,9 @@ def compute_FLOPS(model,img_size,
                               sos_idx,eos_idx,beam_size,
                               max_seq_len):
     '''
-    Uses Official Facebook FLOP counting:
-    https://github.com/facebookresearch/fvcore/blob/main/docs/flop_count.md
+    Current: https://github.com/Lyken17/pytorch-OpCounter
+    
+    ## To try DeepSpeed as its better supported:https://www.deepspeed.ai/tutorials/flops-profiler/#example-bert
     
     '''
     class Wrapper(nn.Module):

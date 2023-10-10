@@ -29,7 +29,7 @@ class VizWizDataLoader(TransparentDataLoader):
                        batch_size, rank=0, num_procs=1,
                        dataloader_mode='caption_wise',
                        resize_image_size=None,
-                       image_folder = "/home/arpitsah/Desktop/Fall-2023/odml/vizWiz/val",
+                       image_folder = "/home/arpitsah/Desktop/Fall-2023/odml/vizWiz/images",
                        verbose=False):
         super(TransparentDataLoader, self).__init__()
         assert (dataloader_mode == 'caption_wise' or dataloader_mode == 'image_wise'), \
