@@ -29,7 +29,7 @@ class VizWizDataLoader(TransparentDataLoader):
                        batch_size, rank=0, num_procs=1,
                        dataloader_mode='caption_wise',
                        resize_image_size=None,
-                       image_folder = "/usr0/home/nvaikunt/On_Device_Image_Captioning/VizWizData/val",
+                       image_folder = "/home/arpitsah/Desktop/Fall-2023/odml/vizWiz/val",
                        verbose=False):
         super(TransparentDataLoader, self).__init__()
         assert (dataloader_mode == 'caption_wise' or dataloader_mode == 'image_wise'), \
@@ -295,5 +295,4 @@ if __name__ == "__main__":
     image_tensor, text_tensor, _, _ = val_dataloader_rank_1.get_next_batch(verbose=True)
     print(image_tensor.shape, text_tensor.shape)
     print(val_dataloader_rank_1.get_batch_it())
-
 

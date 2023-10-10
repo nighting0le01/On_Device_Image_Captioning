@@ -246,12 +246,12 @@ def distributed_train(rank,
                                 max_seq_len=model_max_len, drop_args=model_args.drop_args,
                                 img_feature_dim=1536,
                                 rank=rank)
-
     checkpoint = torch.load("/home/arpitsah/Desktop/Fall-2023/odml/On_Device_Image_Captioning/pretrained_weights/rf_model.pth")
     model.load_state_dict(checkpoint['model_state_dict'])
     print("Model loaded ...")
     model.to(rank)
-    
+
+    model.to(rank)
     ddp_model = DDP(model, device_ids=[rank])
     if train_args.vizwiz: 
         print("VizWiz Dataloader in use")
@@ -518,13 +518,13 @@ if __name__ == "__main__":
 
     if train_args.vizwiz: 
          if os.path.isfile(path_args.vocab_path):
-            with open(path_args.vocab_path, "r") as vocab_json: 
+            with open("On_Device_Image_Captioning/vocab/coco_vocab_idx_dict.json", "r") as vocab_json: 
                 coco_vocab_idx_dict = json.load(vocab_json)
          else: 
              coco_vocab_idx_dict = None
          # Currently testing with val_split, normally should set to 1 with train being True
-         split = 1
-         dataset = VizWizDataset(split, train=True, coco_vocab_dict=coco_vocab_idx_dict)
+         split = 2
+         dataset = VizWizDataset(2, train=False, coco_vocab_dict=coco_vocab_idx_dict)
     else: 
         dataset = CocoDatasetKarpathy(
             images_path=path_args.images_path,
