@@ -18,7 +18,7 @@ class VizWizDataset(Dataset):
 
     def __init__(self,
                  current_split: int,
-                 vizwiz_annotations_dir: str = "/usr0/home/nvaikunt/On_Device_Image_Captioning/VizWizData/annotations",
+                 vizwiz_annotations_dir: str = "/home/arpitsah/Desktop/Fall-2023/odml/vizWiz/annotations",
                  annotations_filtered: bool = False,
                  train: bool = True,
                  val: bool = True,

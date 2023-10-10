@@ -247,8 +247,11 @@ def distributed_train(rank,
                                 img_feature_dim=1536,
                                 rank=rank)
 
-
+    checkpoint = torch.load("/home/arpitsah/Desktop/Fall-2023/odml/On_Device_Image_Captioning/pretrained_weights/rf_model.pth")
+    model.load_state_dict(checkpoint['model_state_dict'])
+    print("Model loaded ...")
     model.to(rank)
+    
     ddp_model = DDP(model, device_ids=[rank])
     if train_args.vizwiz: 
         print("VizWiz Dataloader in use")
@@ -415,27 +418,27 @@ if __name__ == "__main__":
     parser.add_argument('--anneal_coeff', type=float, default=0.8)
     parser.add_argument('--anneal_every_epoch', type=float, default=3.0)
 
-    parser.add_argument('--batch_size', type=int, default=64)
+    parser.add_argument('--batch_size', type=int, default=8)
     parser.add_argument('--num_accum', type=int, default=1)
     parser.add_argument('--num_gpus', type=int, default=1)
     parser.add_argument('--ddp_sync_port', type=int, default=12354)
-    parser.add_argument('--save_path', type=str, default=None) #default='./github_ignore_material/saves/')
+    parser.add_argument('--save_path', type=str, default="/home/arpitsah/Desktop/Fall-2023/odml/On_Device_Image_Captioning/pretrained_weights") #default='./github_ignore_material/saves/')
     parser.add_argument('--save_every_minutes', type=int, default=25)
     parser.add_argument('--how_many_checkpoints', type=int, default=1)
-    parser.add_argument('--print_every_iter', type=int, default=1000)
+    parser.add_argument('--print_every_iter', type=int, default=10)
 
     parser.add_argument('--eval_every_iter', type=int, default=999999)
     parser.add_argument('--eval_parallel_batch_size', type=int, default=8)
     parser.add_argument('--eval_beam_sizes', type=str2list, default=[3])
 
     parser.add_argument('--reinforce', type=str2bool, default=False)
-    parser.add_argument('--vizwiz', type=str2bool, default=False)
+    parser.add_argument('--vizwiz', type=str2bool, default=True)
     parser.add_argument('--scst_max_len', type=int, default=20)
     parser.add_argument('--num_epochs', type=int, default=5)
 
-    parser.add_argument('--image_folder', type=str, default=None)
+    parser.add_argument('--image_folder', type=str, default="/home/arpitsah/Desktop/Fall-2023/odml/vizWiz/train")
     parser.add_argument('--captions_path', type=str, default='./github_ignore_material/raw_data/')
-    parser.add_argument('--vocab_path', type=str, default=None)
+    parser.add_argument('--vocab_path', type=str, default="/home/arpitsah/Desktop/Fall-2023/odml/On_Device_Image_Captioning/vocab/coco_vocab_idx_dict.json")
     parser.add_argument('--partial_load', type=str2bool, default=False)
     parser.add_argument('--backbone_save_path', type=str, default='')
     parser.add_argument('--body_save_path', type=str, default='')
@@ -515,13 +518,13 @@ if __name__ == "__main__":
 
     if train_args.vizwiz: 
          if os.path.isfile(path_args.vocab_path):
-            with open("vocab/coco_vocab_idx_dict.json", "r") as vocab_json: 
+            with open(path_args.vocab_path, "r") as vocab_json: 
                 coco_vocab_idx_dict = json.load(vocab_json)
          else: 
              coco_vocab_idx_dict = None
          # Currently testing with val_split, normally should set to 1 with train being True
-         split = 2
-         dataset = VizWizDataset(2, train=False, coco_vocab_dict=coco_vocab_idx_dict)
+         split = 1
+         dataset = VizWizDataset(split, train=True, coco_vocab_dict=coco_vocab_idx_dict)
     else: 
         dataset = CocoDatasetKarpathy(
             images_path=path_args.images_path,

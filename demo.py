@@ -13,7 +13,6 @@ from models.End_ExpansionNet_v2 import End_ExpansionNet_v2
 from utils.image_utils import preprocess_image
 from utils.language_utils import tokens2description
 
-
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description='Demo')
@@ -21,12 +20,12 @@ if __name__ == "__main__":
     parser.add_argument('--N_enc', type=int, default=3)
     parser.add_argument('--N_dec', type=int, default=3)
     parser.add_argument('--max_seq_len', type=int, default=74)
-    parser.add_argument('--load_path', type=str, default='./rf_model.pth')
+    parser.add_argument('--load_path', type=str, default='/home/arpitsah/Desktop/Fall-2023/odml/On_Device_Image_Captioning/pretrained_weights/rf_model.pth')
     parser.add_argument('--image_paths', type=str,
-                        default=['./demo_material/tatin.jpg',
-                                 './demo_material/micheal.jpg',
-                                 './demo_material/napoleon.jpg',
-                                 './demo_material/cat_girl.jpg'],
+                        default=['On_Device_Image_Captioning/demo_material/tatin.jpg',
+                                 'On_Device_Image_Captioning/demo_material/micheal.jpg',
+                                 'On_Device_Image_Captioning/demo_material/napoleon.jpg',
+                                 'On_Device_Image_Captioning/demo_material/cat_girl.jpg'],
                         nargs='+')
     parser.add_argument('--beam_size', type=int, default=5)
 
@@ -43,7 +42,7 @@ if __name__ == "__main__":
                            dropout=0.0,
                            drop_args=drop_args)
 
-    with open('./demo_material/demo_coco_tokens.pickle', 'rb') as f:
+    with open('/home/arpitsah/Desktop/Fall-2023/odml/On_Device_Image_Captioning/demo_material/demo_coco_tokens.pickle', 'rb') as f:
         coco_tokens = pickle.load(f)
         sos_idx = coco_tokens['word2idx_dict'][coco_tokens['sos_str']]
         eos_idx = coco_tokens['word2idx_dict'][coco_tokens['eos_str']]

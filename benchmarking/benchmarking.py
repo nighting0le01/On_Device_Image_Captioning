@@ -6,21 +6,54 @@ import torch
 import torch.nn as nn
 import argparse
 import pickle
+import cv2
 from argparse import Namespace
 import sys
 sys.path.append('/home/arpitsah/Desktop/Fall-2023/odml/On_Device_Image_Captioning')
 from models.End_ExpansionNet_v2 import End_ExpansionNet_v2
 from utils.image_utils import preprocess_image
 from utils.language_utils import tokens2description
-
-def compute_FLOPS(model):
+from fvcore.nn import FlopCountAnalysis, flop_count_table, flop_count_str
+from thop import profile
+def compute_FLOPS(model,img_size,
+                              sos_idx,eos_idx,beam_size,
+                              max_seq_len):
+    '''
+    Uses Official Facebook FLOP counting:
+    https://github.com/facebookresearch/fvcore/blob/main/docs/flop_count.md
+    
+    '''
+    class Wrapper(nn.Module):
+         def forward(self, inputs):
+            beam_search_kwargs = {'beam_size': beam_size,
+                'beam_max_seq_len': max_seq_len,
+                'sample_or_max': 'max',
+                'how_many_outputs': 1,
+                'sos_idx': sos_idx,
+                'eos_idx': eos_idx}
+            return self.model(enc_x=input_data,
+                                enc_x_num_pads=[0],
+                                mode='beam_search', **beam_search_kwargs)
+        
+    input_data = torch.randn(1, 3, img_size, img_size)
+    model.eval()
+    model_wrapped =  Wrapper()
+    model_wrapped.model = model
+    # input = torch.randn(1, 3, 224, 224)
+    macs, params = profile(model_wrapped, inputs=(input_data, ))
+    print(macs*2)
+    # flop = FlopCountAnalysis(model_wrapped, input_data)
+    # print(flop_count_table(flop, max_depth=4))
+    # print(flop_count_str(flop))
+    # print(flop.total())
+    
     # Calculate FLOPs
-    total_flops = 0
-    for layer in model.modules():
-        if isinstance(layer, nn.Linear):
-            total_flops += (2 * layer.in_features * layer.out_features)
-    print(total_flops)
-    return total_flops
+    # total_flops = 0
+    # for layer in model.modules():
+    #     if isinstance(layer, nn.Linear):
+    #         total_flops += (2 * layer.in_features * layer.out_features)
+    # print(total_flops)
+    # return total_flops
 
 def compute_parameters(model):
 
@@ -80,7 +113,7 @@ def main():
                         help='To compute_train_time')
     parser.add_argument('--compute_inference_time', action='store_true', default=True,
                         help='To compute_train_time')
-    parser.add_argument('--compute_FLOPS', action='store_true', default=False,
+    parser.add_argument('--compute_FLOPS', action='store_true', default=True,
                         help='To Compute FLOPS')
     parser.add_argument('--compute_params', action='store_true', default=True,
                         help='To Compute parameters')
@@ -145,14 +178,15 @@ def main():
     model.load_state_dict(checkpoint['model_state_dict'])
     print("Model loaded ...")
     
-    
+        
     if args.compute_params:
         print("Computing params")
         compute_parameters(model)
     
     if args.compute_FLOPS:
         print("Computing FLOPS")
-        compute_FLOPS(model)
+        compute_FLOPS(model,args.img_size,sos_idx=sos_idx,eos_idx=eos_idx,
+                                  beam_size=args.beam_size,max_seq_len= args.max_seq_len)
 
     if args.compute_inference_time:
         print("Computing Average Inference Time")
