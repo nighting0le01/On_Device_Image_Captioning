@@ -199,8 +199,12 @@ class VizWizDataLoader(TransparentDataLoader):
         
     def get_padded_img_batch(self, img_files):
         image_tensors = []
+        if self.dataset.current_split == VizWizDataset.ValidationSet_ID:
+            subfolder = "val"
+        else:
+            subfolder = "train"
         for image_file in img_files: 
-            full_image_path  = os.path.join(self.image_folder, image_file)
+            full_image_path  = os.path.join(self.image_folder, subfolder, image_file)
             pil_image = PIL_Image.open(full_image_path)
             if pil_image.mode != 'RGB':
                 pil_image = PIL_Image.new("RGB", pil_image.size)
@@ -224,11 +228,14 @@ class VizWizDataLoader(TransparentDataLoader):
     def get_images_by_idx(self, idx, dataset_split, is_tensor=True):
         if dataset_split == VizWizDataset.TestSet_ID:
             image_file = self.dataset.test_list[idx]["image_path"]
+            full_image_path  = os.path.join(self.image_folder, "test", image_file)
         elif dataset_split == VizWizDataset.ValidationSet_ID:
             image_file = self.dataset.val_list[idx]["image_path"]
+            full_image_path  = os.path.join(self.image_folder, "val", image_file)
         else:
             image_file = self.dataset.train_list[idx]["image_path"]
-        full_image_path  = os.path.join(self.image_folder, image_file)
+            full_image_path  = os.path.join(self.image_folder, "train", image_file)
+        # full_image_path  = os.path.join(self.image_folder, image_file)
         pil_image = PIL_Image.open(full_image_path)
         if pil_image.mode != 'RGB':
             pil_image = PIL_Image.new("RGB", pil_image.size)
