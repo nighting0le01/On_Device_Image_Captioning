@@ -216,9 +216,9 @@ class VizWizDataLoader(TransparentDataLoader):
         if dataset_split == VizWizDataset.TestSet_ID:
             raise ValueError("No captions exist for the VizWiz test set")
         elif dataset_split == VizWizDataset.ValidationSet_ID:
-            caption = self.dataset.val_list[idx]["tokenized_caption"]
+            caption = self.dataset.val_list[idx]['all_captions']
         else:
-            caption = self.dataset.train_list[idx]["tokenized_caption"]
+            caption = self.dataset.train_list[idx]['all_captions']
         return caption
 
     def get_images_by_idx(self, idx, dataset_split, is_tensor=True):

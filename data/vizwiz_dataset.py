@@ -184,6 +184,7 @@ class VizWizDataset(Dataset):
             processed_dict[image_id]['image_path'] = filtered_dict[image_id]['image_path'] 
             processed_dict[image_id]['raw_caption'] = raw_caption
             processed_dict[image_id]['tokenized_caption'] = self.tokenize_caption(raw_caption)
+            processed_dict[image_id]['all_captions'] = filtered_dict[image_id]['all_captions'] 
         with open(save_file, 'w') as fp:
             json.dump(processed_dict, fp)
         
@@ -202,15 +203,17 @@ class VizWizDataset(Dataset):
                 filtered_dict[image_id]['caption'] = chosen_caption
                 continue
             all_captions = annotation_dict['annotations']
+            filtered_captions = []
             if strict_filt: 
                 if "Quality issues are too severe to recognize visual content." in all_captions: 
                     continue
             for caption in all_captions: 
                 if caption != "Quality issues are too severe to recognize visual content.":
                     chosen_caption = caption
-                    break 
+                    filtered_captions.append(caption) 
 
             filtered_dict[image_id]['caption'] = chosen_caption
+            filtered_dict[image_id]['all_captions'] = filtered_captions
         return filtered_dict
     
     @staticmethod
