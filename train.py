@@ -168,7 +168,7 @@ def train(rank,
                 running_reward_base = 0
                 prev_print_iter = it + 1
 
-        if ((it + 1) % data_loader.get_num_batches() == 0) or ((it + 1) % train_args.eval_every_iter == 0):
+        if  ((it + 1) % train_args.eval_every_iter == 0): #((it + 1) % data_loader.get_num_batches() == 0) or
             if not train_args.reinforce:
                 compute_evaluation_loss(loss_function, ddp_model, dataset, data_loader,
                                         dataset.val_num_images, sub_batch_size=train_args.eval_parallel_batch_size,
@@ -200,6 +200,31 @@ def train(rank,
                                      additional_info='rf' if train_args.reinforce else 'xe')
 
 
+# def load_state_dict_filtered(model, checkpoint, filter_prefixes):
+#     filtered_state_dict = {}
+#     for key, value in checkpoint['model_state_dict'].items():
+#         include = True
+#         for prefix in filter_prefixes:
+#             if key.startswith(prefix):
+#                 include = False
+#                 break
+#         if include:
+#             filtered_state_dict[key] = value
+
+#     model.load_state_dict(filtered_state_dict)
+    
+def load_state_dict_filtered(model, checkpoint, filter_prefixes, target_prefix):
+    filtered_state_dict = {}
+    for key, value in checkpoint['state_dict'].items():
+        include = True
+        for prefix in filter_prefixes:
+            if key.startswith(prefix):
+                include = False
+                break
+        if include:
+            new_key = key.replace(target_prefix, 'encoders.1') if target_prefix in key else key
+            model.state_dict()[new_key].copy_(value)
+    
 def distributed_train(rank,
                       world_size,
                       model_args,
@@ -216,6 +241,13 @@ def distributed_train(rank,
     os.environ['MASTER_PORT'] = train_args.ddp_sync_port
     dist.init_process_group("nccl", rank=rank, world_size=world_size)
 
+    if model_args.param_config == 1:
+        model_args.N_enc = 2    
+    elif model_args.param_config == 2:
+        model_args.N_enc = 2   
+        model_args.N_dec = 2   
+    
+    
     img_size = 384
     if train_args.is_end_to_end:
         from models.End_ExpansionNet_v2 import End_ExpansionNet_v2
@@ -246,10 +278,23 @@ def distributed_train(rank,
                                 max_seq_len=model_max_len, drop_args=model_args.drop_args,
                                 img_feature_dim=1536,
                                 rank=rank)
+        
     checkpoint = torch.load(path_args.pretrain_checkpoint)
-    model.load_state_dict(checkpoint['model_state_dict'])
-    print("Model loaded ...")
-    model.to(rank)
+    if model_args.param_config == 0:
+        model.load_state_dict(checkpoint['model_state_dict'])
+        print("Baseline Model loaded ...")
+        
+    elif model_args.param_config == 1:
+        filter_prefix = ["encoders.1"] 
+        load_state_dict_filtered(model, checkpoint, filter_prefix)
+        print(" Model with 2 Encoder Layers loaded ...")
+        
+    elif model_args.param_config == 2:
+        filter_prefix = ["encoders.1", "decoders.1"]
+        load_state_dict_filtered(model, checkpoint, filter_prefix)
+        print(" Model with 2 Encoder & 2 Decoder Layers  loaded ...")
+    
+
 
     model.to(rank)
     ddp_model = DDP(model, device_ids=[rank])
@@ -436,7 +481,7 @@ if __name__ == "__main__":
     parser.add_argument('--scst_max_len', type=int, default=20)
     parser.add_argument('--num_epochs', type=int, default=5)
 
-    parser.add_argument('--image_folder', type=str, default="/home/arpitsah/Desktop/Fall-2023/odml/vizWiz/images")
+    parser.add_argument('--image_folder', type=str, default="/home/arpitsah/Desktop/Fall-2023/odml/vizWiz/train")
     parser.add_argument('--captions_path', type=str, default='./github_ignore_material/raw_data/')
     parser.add_argument('--vocab_path', type=str, default="/home/arpitsah/Desktop/Fall-2023/odml/On_Device_Image_Captioning/vocab/coco_vocab_idx_dict.json")
     parser.add_argument('--partial_load', type=str2bool, default=False)
@@ -448,9 +493,14 @@ if __name__ == "__main__":
     parser.add_argument('--preproc_images_hdf5_filepath', type=str, default=None)
     parser.add_argument('--features_path', type=str, default="./github_ignore_material/raw_data/")
     parser.add_argument('--pretrain_checkpoint', type=str, default="/home/arpitsah/Desktop/Fall-2023/odml/On_Device_Image_Captioning/pretrained_weights/rf_model.pth")
-
+    
     parser.add_argument('--seed', type=int, default=1234)
-
+    
+    parser.add_argument('--param_config', type=int, default=0, choices=[0, 1, 2],
+                    help="Choose a mode: \n"
+                         "0 - Baseline\n"
+                         "1 - Remove layer in Encoder (Enc_dec)\n"
+                         "2 - Remove layer from Encoder and Decoder (Enc_deco_dec)")
     args = parser.parse_args()
     args.ddp_sync_port = str(args.ddp_sync_port)
 
@@ -474,7 +524,8 @@ if __name__ == "__main__":
                            N_enc=args.N_enc,
                            N_dec=args.N_dec,
                            dropout=args.dropout,
-                           drop_args=drop_args)
+                           drop_args=drop_args,
+                           param_config = args.param_config)
     optim_args = Namespace(lr=args.lr,
                            min_lr=args.min_lr,
                            warmup_iters=args.warmup_iters,
@@ -520,7 +571,7 @@ if __name__ == "__main__":
 
     if train_args.vizwiz: 
          if os.path.isfile(path_args.vocab_path):
-            with open("On_Device_Image_Captioning/vocab/coco_vocab_idx_dict.json", "r") as vocab_json: 
+            with open("/home/arpitsah/Desktop/Fall-2023/odml/On_Device_Image_Captioning/vocab/coco_vocab_idx_dict.json", "r") as vocab_json: 
                 coco_vocab_idx_dict = json.load(vocab_json)
          else: 
              coco_vocab_idx_dict = None

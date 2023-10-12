@@ -162,3 +162,4 @@ cython_debug/
 VizWizData/
 pretrained_weights/
 coco_annotations/
+vizWiz_Weights/

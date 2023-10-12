@@ -7,7 +7,7 @@ from argparse import Namespace
 from utils.args_utils import str2list, str2bool
 import copy
 from time import time
-
+import json
 import torch.distributed as dist
 import torch.multiprocessing as mp
 from torch.nn.parallel import DistributedDataParallel as DDP
@@ -399,16 +399,16 @@ if __name__ == "__main__":
 
     parser.add_argument('--num_gpus', type=int, default=1)
     parser.add_argument('--ddp_sync_port', type=int, default=12354)
-    parser.add_argument('--save_model_path', type=str, default='./github_ignore_material/')
+    parser.add_argument('--save_model_path', type=str, default='/home/arpitsah/Desktop/Fall-2023/odml/On_Device_Image_Captioning/vizWiz_Weights/pretrained_weightscheckpoint_2023-10-10-16:26:11_epoch4it1968bs8_xe_.pth')
 
     parser.add_argument('--eval_parallel_batch_size', type=int, default=16)
     parser.add_argument('--eval_beam_sizes', type=str2list, default=[3])
-
+    parser.add_argument('--vocab_path', type=str, default="/home/arpitsah/Desktop/Fall-2023/odml/On_Device_Image_Captioning/vocab/coco_vocab_idx_dict.json")
     parser.add_argument('--images_path', type=str, default="./github_ignore_material/raw_data/")
     parser.add_argument('--preproc_images_hdf5_filepath', type=str, default=None)
     parser.add_argument('--features_path', type=str, default='./github_ignore_material/raw_data/')
     parser.add_argument('--captions_path', type=str, default='./github_ignore_material/raw_data/')
-
+    parser.add_argument('--vizwiz', type=str2bool, default=True)
     args = parser.parse_args()
     args.ddp_sync_port = str(args.ddp_sync_port)
 
@@ -433,20 +433,39 @@ if __name__ == "__main__":
                            drop_args=drop_args
                            )
 
-    coco_dataset = CocoDatasetKarpathy(
-        images_path=args.images_path,
-        coco_annotations_path=args.captions_path + "dataset_coco.json",
-        train2014_bboxes_path=args.captions_path + "train2014_instances.json",
-        val2014_bboxes_path=args.captions_path + "val2014_instances.json",
-        preproc_images_hdf5_filepath=args.preproc_images_hdf5_filepath if args.is_end_to_end else None,
-        precalc_features_hdf5_filepath=None if args.is_end_to_end else args.features_path,
-        limited_num_train_images=None,
-        limited_num_val_images=5000)
+    # coco_dataset = CocoDatasetKarpathy(
+    #     images_path=args.images_path,
+    #     coco_annotations_path=args.captions_path + "dataset_coco.json",
+    #     train2014_bboxes_path=args.captions_path + "train2014_instances.json",
+    #     val2014_bboxes_path=args.captions_path + "val2014_instances.json",
+    #     preproc_images_hdf5_filepath=args.preproc_images_hdf5_filepath if args.is_end_to_end else None,
+    #     precalc_features_hdf5_filepath=None if args.is_end_to_end else args.features_path,
+    #     limited_num_train_images=None,
+    #     limited_num_val_images=5000)
+    if args.vizwiz: 
+         if os.path.isfile(args.vocab_path):
+            with open("On_Device_Image_Captioning/vocab/coco_vocab_idx_dict.json", "r") as vocab_json: 
+                coco_vocab_idx_dict = json.load(vocab_json)
+         else: 
+             coco_vocab_idx_dict = None
+         # Currently testing with val_split, normally should set to 1 with train being True
+         split = 2
+         dataset = VizWizDataset(split, train=False,val = True,coco_vocab_dict=coco_vocab_idx_dict)
+    else: 
+        dataset = CocoDatasetKarpathy(
+            images_path=args.images_path,
+            coco_annotations_path=args.captions_path + "dataset_coco.json",
+            train2014_bboxes_path=args.captions_path + "train2014_instances.json",
+            val2014_bboxes_path=args.captions_path + "val2014_instances.json",
+            preproc_images_hdf5_filepath=args.preproc_images_hdf5_filepath if args.is_end_to_end else None,
+            precalc_features_hdf5_filepath=None if args.is_end_to_end else args.features_path,
+            limited_num_train_images=None,
+            limited_num_val_images=5000)
 
     spawn_train_processes(is_end_to_end=args.is_end_to_end,
                           model_args=model_args,
                           is_ensemble=args.is_ensemble,
-                          coco_dataset=coco_dataset,
+                          coco_dataset=dataset,
                           eval_parallel_batch_size=args.eval_parallel_batch_size,
                           eval_beam_sizes=args.eval_beam_sizes,
                           show_predictions=args.show_predictions,
