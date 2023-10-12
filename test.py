@@ -237,7 +237,7 @@ def test(rank, world_size,
          is_end_to_end,
          model_args,
          is_ensemble,
-         coco_dataset,
+         dataset,
          eval_parallel_batch_size,
          eval_beam_sizes,
          show_predictions,
@@ -266,8 +266,8 @@ def test(rank, world_size,
                                     N_dec=model_args.N_dec, num_heads=8, ff=2048,
                                     num_exp_enc_list=[32, 64, 128, 256, 512],
                                     num_exp_dec=16,
-                                    output_word2idx=coco_dataset.caption_word2idx_dict,
-                                    output_idx2word=coco_dataset.caption_idx2word_list,
+                                    output_word2idx=dataset.caption_word2idx_dict,
+                                    output_idx2word=dataset.caption_idx2word_list,
                                     max_seq_len=model_max_len, drop_args=model_args.drop_args,
                                     rank=rank)
     else:
@@ -276,16 +276,34 @@ def test(rank, world_size,
                                 N_dec=model_args.N_dec, num_heads=8, ff=2048,
                                 num_exp_enc_list=[32, 64, 128, 256, 512],
                                 num_exp_dec=16,
-                                output_word2idx=coco_dataset.caption_word2idx_dict,
-                                output_idx2word=coco_dataset.caption_idx2word_list,
+                                output_word2idx=dataset.caption_word2idx_dict,
+                                output_idx2word=dataset.caption_idx2word_list,
                                 max_seq_len=model_max_len, drop_args=model_args.drop_args,
                                 img_feature_dim=1536,
                                 rank=rank)
 
+    
+    # checkpoint = torch.load(model_args.pretrain_checkpoint)
+    # model.load_state_dict(checkpoint['model_state_dict'])
+    # print("Baseline Model loaded ...")
     model.to(rank)
     ddp_model = DDP(model, device_ids=[rank])
 
-    data_loader = CocoDataLoader(coco_dataset=coco_dataset,
+
+    
+    if model_args.vizwiz: 
+        print("VizWiz Dataloader in use")
+        data_loader = VizWizDataLoader(vizwiz_dataset=dataset, 
+                                        batch_size=8 ,
+                                        num_procs=world_size,
+                                        array_of_init_seeds=array_of_init_seeds,
+                                        dataloader_mode='caption_wise',
+                                        resize_image_size=img_size if is_end_to_end else None,
+                                        rank=rank,
+                                        image_folder=model_args.image_folder,
+                                        verbose=True)
+    else:
+        data_loader = CocoDataLoader(dataset=dataset,
                                  batch_size=1,
                                  num_procs=world_size,
                                  array_of_init_seeds=array_of_init_seeds,
@@ -312,9 +330,9 @@ def test(rank, world_size,
         ddp_model = get_ensemble_model(model, checkpoints_list, rank=rank)
 
     print("Evaluation on Validation Set")
-    evaluate_model_on_set(ddp_model, coco_dataset.caption_idx2word_list,
-                          coco_dataset.get_sos_token_idx(), coco_dataset.get_eos_token_idx(),
-                          coco_dataset.val_num_images,
+    evaluate_model_on_set(ddp_model, dataset.caption_idx2word_list,
+                          dataset.get_sos_token_idx(), dataset.get_eos_token_idx(),
+                          dataset.val_num_images,
                           data_loader,
                           CocoDatasetKarpathy.ValidationSet_ID, model_max_len,
                           rank, ddp_sync_port,
@@ -322,35 +340,35 @@ def test(rank, world_size,
                           use_images_instead_of_features=is_end_to_end,
                           beam_sizes=eval_beam_sizes)
 
-    print("Evaluation on Test Set")
-    pred_dict, gts_dict = evaluate_model_on_set(ddp_model, coco_dataset.caption_idx2word_list,
-                                                coco_dataset.get_sos_token_idx(), coco_dataset.get_eos_token_idx(),
-                                                coco_dataset.test_num_images,
-                                                data_loader,
-                                                CocoDatasetKarpathy.TestSet_ID, model_max_len,
-                                                rank, ddp_sync_port,
-                                                parallel_batches=eval_parallel_batch_size,
-                                                use_images_instead_of_features=is_end_to_end,
-                                                beam_sizes=eval_beam_sizes,
-                                                get_predictions=show_predictions)
+    # print("Evaluation on Test Set")
+    # pred_dict, gts_dict = evaluate_model_on_set(ddp_model, dataset.caption_idx2word_list,
+    #                                             dataset.get_sos_token_idx(), dataset.get_eos_token_idx(),
+    #                                             dataset.test_num_images,
+    #                                             data_loader,
+    #                                             CocoDatasetKarpathy.TestSet_ID, model_max_len,
+    #                                             rank, ddp_sync_port,
+    #                                             parallel_batches=eval_parallel_batch_size,
+    #                                             use_images_instead_of_features=is_end_to_end,
+    #                                             beam_sizes=eval_beam_sizes,
+    #                                             get_predictions=show_predictions)
 
-    if rank == 0 and show_predictions:
-        with open("predictions.txt", 'w') as f:
-            for i in range(len(pred_dict)):
-                prediction = pred_dict[i][0]['caption']
-                ground_truth_list = [gts_dict[i][j]['caption'] for j in range(len(gts_dict[i]))]
-                f.write(str(i) + '----------------------------------------------------------------------' + '\n')
-                f.write('Pred: ' + str(prediction) + '\n')
-                f.write('Gt: ' + str(ground_truth_list) + '\n')
+    # if rank == 0 and show_predictions:
+    #     with open("predictions.txt", 'w') as f:
+    #         for i in range(len(pred_dict)):
+    #             prediction = pred_dict[i][0]['caption']
+    #             ground_truth_list = [gts_dict[i][j]['caption'] for j in range(len(gts_dict[i]))]
+    #             f.write(str(i) + '----------------------------------------------------------------------' + '\n')
+    #             f.write('Pred: ' + str(prediction) + '\n')
+    #             f.write('Gt: ' + str(ground_truth_list) + '\n')
 
-    print("[GPU: " + str(rank) + " ] Closing...")
+    # print("[GPU: " + str(rank) + " ] Closing...")
     dist.destroy_process_group()
 
 
 def spawn_train_processes(is_end_to_end,
                           model_args,
                           is_ensemble,
-                          coco_dataset,
+                          dataset,
                           eval_parallel_batch_size,
                           eval_beam_sizes,
                           show_predictions,
@@ -359,9 +377,9 @@ def spawn_train_processes(is_end_to_end,
                           save_model_path
                           ):
 
-    max_sequence_length = coco_dataset.max_seq_len + 20
+    max_sequence_length = dataset.max_seq_len + 20
     print("Max sequence length: " + str(max_sequence_length))
-    print("y vocabulary size: " + str(len(coco_dataset.caption_word2idx_dict)))
+    print("y vocabulary size: " + str(len(dataset.caption_word2idx_dict)))
 
     world_size = torch.cuda.device_count()
     print("Using - ", world_size, " processes / GPUs!")
@@ -374,7 +392,7 @@ def spawn_train_processes(is_end_to_end,
                    is_end_to_end,
                    model_args,
                    is_ensemble,
-                   coco_dataset,
+                   dataset,
                    eval_parallel_batch_size,
                    eval_beam_sizes,
                    show_predictions,
@@ -396,19 +414,30 @@ if __name__ == "__main__":
 
     parser.add_argument('--is_end_to_end', type=str2bool, default=True)
     parser.add_argument('--is_ensemble', type=str2bool, default=False)
-
-    parser.add_argument('--num_gpus', type=int, default=1)
     parser.add_argument('--ddp_sync_port', type=int, default=12354)
-    parser.add_argument('--save_model_path', type=str, default='/home/arpitsah/Desktop/Fall-2023/odml/On_Device_Image_Captioning/vizWiz_Weights/pretrained_weightscheckpoint_2023-10-10-16:26:11_epoch4it1968bs8_xe_.pth')
+    parser.add_argument('--save_model_path', type=str, default='/home/arpitsah/Desktop/Fall-2023/odml/On_Device_Image_Captioning/pretrained_weightscheckpoint_2023-10-12-13:36:34_epoch4it1968bs8_xe_.pth')
 
     parser.add_argument('--eval_parallel_batch_size', type=int, default=16)
     parser.add_argument('--eval_beam_sizes', type=str2list, default=[3])
+    parser.add_argument('--image_folder', type=str, default="/home/arpitsah/Desktop/Fall-2023/odml/vizWiz")
     parser.add_argument('--vocab_path', type=str, default="/home/arpitsah/Desktop/Fall-2023/odml/On_Device_Image_Captioning/vocab/coco_vocab_idx_dict.json")
     parser.add_argument('--images_path', type=str, default="./github_ignore_material/raw_data/")
     parser.add_argument('--preproc_images_hdf5_filepath', type=str, default=None)
     parser.add_argument('--features_path', type=str, default='./github_ignore_material/raw_data/')
     parser.add_argument('--captions_path', type=str, default='./github_ignore_material/raw_data/')
+    # parser.add_argument('--pretrain_checkpoint', type=str, default="/home/arpitsah/Desktop/Fall-2023/odml/On_Device_Image_Captioning/pretrained_weightscheckpoint_2023-10-12-13:36:34_epoch4it1968bs8_xe_.pth")
     parser.add_argument('--vizwiz', type=str2bool, default=True)
+    parser.add_argument('--batch_size', type=int, default=8)
+    parser.add_argument('--num_accum', type=int, default=1)
+    parser.add_argument('--num_gpus', type=int, default=1)
+
+    parser.add_argument('--save_path', type=str, default="/home/arpitsah/Desktop/Fall-2023/odml/On_Device_Image_Captioning/pretrained_weights") #default='./github_ignore_material/saves/')
+    parser.add_argument('--save_every_minutes', type=int, default=25)
+    parser.add_argument('--how_many_checkpoints', type=int, default=1)
+    parser.add_argument('--print_every_iter', type=int, default=10)
+    
+    
+    
     args = parser.parse_args()
     args.ddp_sync_port = str(args.ddp_sync_port)
 
@@ -420,6 +449,9 @@ if __name__ == "__main__":
     print("ddp_sync_port: " + str(args.ddp_sync_port))
     print("save_model_path: " + str(args.save_model_path))
 
+
+
+
     drop_args = Namespace(enc=0.0,
                           dec=0.0,
                           enc_input=0.0,
@@ -430,18 +462,13 @@ if __name__ == "__main__":
                            N_enc=args.N_enc,
                            N_dec=args.N_dec,
                            dropout=0.0,
-                           drop_args=drop_args
+                           drop_args=drop_args,
+                           vizwiz = args.vizwiz,
+                           image_folder = args.image_folder
                            )
 
-    # coco_dataset = CocoDatasetKarpathy(
-    #     images_path=args.images_path,
-    #     coco_annotations_path=args.captions_path + "dataset_coco.json",
-    #     train2014_bboxes_path=args.captions_path + "train2014_instances.json",
-    #     val2014_bboxes_path=args.captions_path + "val2014_instances.json",
-    #     preproc_images_hdf5_filepath=args.preproc_images_hdf5_filepath if args.is_end_to_end else None,
-    #     precalc_features_hdf5_filepath=None if args.is_end_to_end else args.features_path,
-    #     limited_num_train_images=None,
-    #     limited_num_val_images=5000)
+    
+    
     if args.vizwiz: 
          if os.path.isfile(args.vocab_path):
             with open("On_Device_Image_Captioning/vocab/coco_vocab_idx_dict.json", "r") as vocab_json: 
@@ -465,7 +492,7 @@ if __name__ == "__main__":
     spawn_train_processes(is_end_to_end=args.is_end_to_end,
                           model_args=model_args,
                           is_ensemble=args.is_ensemble,
-                          coco_dataset=dataset,
+                          dataset=dataset,
                           eval_parallel_batch_size=args.eval_parallel_batch_size,
                           eval_beam_sizes=args.eval_beam_sizes,
                           show_predictions=args.show_predictions,

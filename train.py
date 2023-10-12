@@ -198,33 +198,29 @@ def train(rank,
                                      data_loader, path_args.save_path,
                                      num_max_checkpoints=train_args.how_many_checkpoints,
                                      additional_info='rf' if train_args.reinforce else 'xe')
-
-
-# def load_state_dict_filtered(model, checkpoint, filter_prefixes):
-#     filtered_state_dict = {}
-#     for key, value in checkpoint['model_state_dict'].items():
-#         include = True
-#         for prefix in filter_prefixes:
-#             if key.startswith(prefix):
-#                 include = False
-#                 break
-#         if include:
-#             filtered_state_dict[key] = value
-
-#     model.load_state_dict(filtered_state_dict)
     
-def load_state_dict_filtered(model, checkpoint, filter_prefixes, target_prefix):
-    filtered_state_dict = {}
-    for key, value in checkpoint['state_dict'].items():
-        include = True
-        for prefix in filter_prefixes:
-            if key.startswith(prefix):
-                include = False
-                break
-        if include:
-            new_key = key.replace(target_prefix, 'encoders.1') if target_prefix in key else key
-            model.state_dict()[new_key].copy_(value)
+def load_state_dict_filtered(model, checkpoint, filter_prefixes="enc"):
     
+
+    pretrained_state_dict = checkpoint['model_state_dict']
+    new_state_dict = {}
+    for key, value in pretrained_state_dict.items():
+        if 'encoders.2' in key:
+            new_key = key.replace('encoders.2', 'encoders.1')
+        elif 'enc_reduce_group' in key:
+            n,d = value.shape
+            split_index = n // 3
+            first_part = value[:split_index, :]
+            last_part = value[-split_index:, :]
+            value = torch.stack((first_part,last_part))
+            new_state_dict[key] =  value 
+        else:
+            new_key = key
+        
+        new_state_dict[new_key] = value    
+        
+    model.load_state_dict(new_state_dict)
+            
 def distributed_train(rank,
                       world_size,
                       model_args,
@@ -285,13 +281,11 @@ def distributed_train(rank,
         print("Baseline Model loaded ...")
         
     elif model_args.param_config == 1:
-        filter_prefix = ["encoders.1"] 
-        load_state_dict_filtered(model, checkpoint, filter_prefix)
+        load_state_dict_filtered(model, checkpoint, "enc")
         print(" Model with 2 Encoder Layers loaded ...")
         
     elif model_args.param_config == 2:
-        filter_prefix = ["encoders.1", "decoders.1"]
-        load_state_dict_filtered(model, checkpoint, filter_prefix)
+        load_state_dict_filtered(model, checkpoint, "dec")
         print(" Model with 2 Encoder & 2 Decoder Layers  loaded ...")
     
 
@@ -496,7 +490,7 @@ if __name__ == "__main__":
     
     parser.add_argument('--seed', type=int, default=1234)
     
-    parser.add_argument('--param_config', type=int, default=0, choices=[0, 1, 2],
+    parser.add_argument('--param_config', type=int, default=1, choices=[0, 1, 2],
                     help="Choose a mode: \n"
                          "0 - Baseline\n"
                          "1 - Remove layer in Encoder (Enc_dec)\n"
