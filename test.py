@@ -93,14 +93,13 @@ def evaluate_model(ddp_model,
                    use_images_instead_of_features=False,
 
                    verbose=True,
-                   stanford_model_path="/home/arpitsah/Desktop/Fall-2023/odml/On_Device_Image_Captioning/eval/get_stanford_models.sh"):
+                   stanford_model_path="./eval/get_stanford_models.sh"):
 
     start_time = time()
 
     sub_list_predictions = []
     validate_y = []
     num_samples = len(indexes)
-
     ddp_model.eval()
     with torch.no_grad():
         sb_size = parallel_batches
@@ -113,7 +112,7 @@ def evaluate_model(ddp_model,
             else:
                 from_idx = sb_it * sb_size
                 to_idx = (sb_it + 1) * sb_size
-
+            print(from_idx, to_idx)
             if use_images_instead_of_features:
                 sub_batch_x = [data_loader.get_images_by_idx(i, dataset_split=dataset_split).unsqueeze(0)
                          for i in list(range(from_idx, to_idx))]
@@ -144,7 +143,7 @@ def evaluate_model(ddp_model,
             pred_sentence = language_utils.convert_allsentences_idx2word(output_words, y_idx2word_list)
             for sentence in pred_sentence:
                 sub_list_predictions.append(' '.join(sentence[1:-1]))  # remove EOS and SOS
-
+            print(sub_list_predictions[-1], validate_y[-1])
             del sub_batch_x, sub_batch_x_num_pads, output_words
 
     ddp_model.train()
@@ -187,7 +186,7 @@ def evaluate_model_on_set(ddp_model,
                           rank, ddp_sync_port,
                           parallel_batches=16,
                           beam_sizes=[1],
-                          stanford_model_path='/home/arpitsah/Desktop/Fall-2023/odml/On_Device_Image_Captioning/eval/get_stanford_models.sh',
+                          stanford_model_path='./eval/get_stanford_models.sh',
                           use_images_instead_of_features=False,
                           get_predictions=False, is_vizwiz=False):
 
@@ -415,12 +414,12 @@ if __name__ == "__main__":
     parser.add_argument('--is_end_to_end', type=str2bool, default=True)
     parser.add_argument('--is_ensemble', type=str2bool, default=False)
     parser.add_argument('--ddp_sync_port', type=int, default=12354)
-    parser.add_argument('--save_model_path', type=str, default='/home/arpitsah/Desktop/Fall-2023/odml/On_Device_Image_Captioning/pretrained_weightscheckpoint_2023-10-12-13:36:34_epoch4it1968bs8_xe_.pth')
+    parser.add_argument('--save_model_path', type=str, default='/usr0/home/nvaikunt/On_Device_Image_Captioning/pretrained_weights/4_th.pth')
 
     parser.add_argument('--eval_parallel_batch_size', type=int, default=16)
     parser.add_argument('--eval_beam_sizes', type=str2list, default=[3])
-    parser.add_argument('--image_folder', type=str, default="/home/arpitsah/Desktop/Fall-2023/odml/vizWiz")
-    parser.add_argument('--vocab_path', type=str, default="/home/arpitsah/Desktop/Fall-2023/odml/On_Device_Image_Captioning/vocab/coco_vocab_idx_dict.json")
+    parser.add_argument('--image_folder', type=str, default="./VizWizData")
+    parser.add_argument('--vocab_path', type=str, default="./vocab/coco_vocab_idx_dict.json")
     parser.add_argument('--images_path', type=str, default="./github_ignore_material/raw_data/")
     parser.add_argument('--preproc_images_hdf5_filepath', type=str, default=None)
     parser.add_argument('--features_path', type=str, default='./github_ignore_material/raw_data/')
@@ -431,7 +430,7 @@ if __name__ == "__main__":
     parser.add_argument('--num_accum', type=int, default=1)
     parser.add_argument('--num_gpus', type=int, default=1)
 
-    parser.add_argument('--save_path', type=str, default="/home/arpitsah/Desktop/Fall-2023/odml/On_Device_Image_Captioning/pretrained_weights") #default='./github_ignore_material/saves/')
+    parser.add_argument('--save_path', type=str, default="/usr0/home/nvaikunt/On_Device_Image_Captioning/pretrained_weights") #default='./github_ignore_material/saves/')
     parser.add_argument('--save_every_minutes', type=int, default=25)
     parser.add_argument('--how_many_checkpoints', type=int, default=1)
     parser.add_argument('--print_every_iter', type=int, default=10)
@@ -471,13 +470,14 @@ if __name__ == "__main__":
     
     if args.vizwiz: 
          if os.path.isfile(args.vocab_path):
-            with open("On_Device_Image_Captioning/vocab/coco_vocab_idx_dict.json", "r") as vocab_json: 
+            with open("./vocab/coco_vocab_idx_dict.json", "r") as vocab_json: 
                 coco_vocab_idx_dict = json.load(vocab_json)
          else: 
              coco_vocab_idx_dict = None
          # Currently testing with val_split, normally should set to 1 with train being True
          split = 2
-         dataset = VizWizDataset(split, train=False,val = True,coco_vocab_dict=coco_vocab_idx_dict)
+         dataset = VizWizDataset(split, train=False,val = True,coco_vocab_dict=coco_vocab_idx_dict, 
+                                 vizwiz_annotations_dir="/usr0/home/nvaikunt/On_Device_Image_Captioning/VizWizData/annotations")
     else: 
         dataset = CocoDatasetKarpathy(
             images_path=args.images_path,

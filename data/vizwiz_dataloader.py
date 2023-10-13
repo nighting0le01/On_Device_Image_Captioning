@@ -94,10 +94,13 @@ class VizWizDataLoader(TransparentDataLoader):
         if tailing_elements != 0:
             if self.dataset.split_name() == "train":
                 self.dataset.train_list = self.dataset.train_list[:-tailing_elements]
+                self.dataset.train_num_images = len(self.dataset.train_list)
             elif self.dataset.split_name() == "validation":
                 self.dataset.val_list = self.dataset.val_list[:-tailing_elements]
+                self.dataset.val_num_images = len(self.dataset.val_list)
             else: 
                 self.dataset.test_list = self.dataset.test_list[:-tailing_elements]
+                self.dataset.test_num_images = len(self.dataset.test_list)
 
         image_file_batch = []
         caption_y_batch = []
