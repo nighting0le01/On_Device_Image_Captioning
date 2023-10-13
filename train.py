@@ -201,23 +201,36 @@ def train(rank,
     
 def load_state_dict_filtered(model, checkpoint, filter_prefixes="enc"):
     
-
     pretrained_state_dict = checkpoint['model_state_dict']
     new_state_dict = {}
     for key, value in pretrained_state_dict.items():
+        if filter_prefixes == "dec":
+            if 'decoders.2' in key:
+                new_key = key.replace('decoders.2', 'decoders.1')
+                new_state_dict[new_key] = value 
+                continue
+            elif 'dec_reduce_group.weight' in key:
+                split_index = value.shape[-1]// 3
+                first_part = value[:,:split_index]
+                last_part = value[:,-split_index:]
+                value = torch.hstack((first_part,last_part))
+                new_state_dict[key] =  value 
+                continue
+              
         if 'encoders.2' in key:
             new_key = key.replace('encoders.2', 'encoders.1')
-        elif 'enc_reduce_group' in key:
-            n,d = value.shape
-            split_index = n // 3
-            first_part = value[:split_index, :]
-            last_part = value[-split_index:, :]
-            value = torch.stack((first_part,last_part))
+            new_state_dict[new_key] = value   
+            continue              
+        elif 'enc_reduce_group.weight' in key:
+            split_index = value.shape[-1]// 3
+            first_part = value[:,:split_index]
+            last_part = value[:,-split_index:]
+            value = torch.hstack((first_part,last_part))
             new_state_dict[key] =  value 
+            continue
         else:
             new_key = key
-        
-        new_state_dict[new_key] = value    
+            new_state_dict[new_key] = value     
         
     model.load_state_dict(new_state_dict)
             
@@ -239,6 +252,7 @@ def distributed_train(rank,
 
     if model_args.param_config == 1:
         model_args.N_enc = 2    
+        
     elif model_args.param_config == 2:
         model_args.N_enc = 2   
         model_args.N_dec = 2   
@@ -490,7 +504,7 @@ if __name__ == "__main__":
     
     parser.add_argument('--seed', type=int, default=1234)
     
-    parser.add_argument('--param_config', type=int, default=1, choices=[0, 1, 2],
+    parser.add_argument('--param_config', type=int, default=2, choices=[0, 1, 2],
                     help="Choose a mode: \n"
                          "0 - Baseline\n"
                          "1 - Remove layer in Encoder (Enc_dec)\n"
