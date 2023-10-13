@@ -13,7 +13,7 @@ sys.path.append('/home/arpitsah/Desktop/Fall-2023/odml/On_Device_Image_Captionin
 from models.End_ExpansionNet_v2 import End_ExpansionNet_v2
 from utils.image_utils import preprocess_image
 from utils.language_utils import tokens2description
-from fvcore.nn import FlopCountAnalysis, flop_count_table, flop_count_str
+# from fvcore.nn import FlopCountAnalysis, flop_count_table, flop_count_str
 from thop import profile
 def compute_FLOPS(model,img_size,
                               sos_idx,eos_idx,beam_size,
@@ -43,18 +43,7 @@ def compute_FLOPS(model,img_size,
     # input = torch.randn(1, 3, 224, 224)
     flops, params = profile(model_wrapped, inputs=(input_data, ))
     print(flops)
-    # flop = FlopCountAnalysis(model_wrapped, input_data)
-    # print(flop_count_table(flop, max_depth=4))
-    # print(flop_count_str(flop))
-    # print(flop.total())
-    
-    # Calculate FLOPs
-    # total_flops = 0
-    # for layer in model.modules():
-    #     if isinstance(layer, nn.Linear):
-    #         total_flops += (2 * layer.in_features * layer.out_features)
-    # print(total_flops)
-    # return total_flops
+
 
 def compute_parameters(model):
 
@@ -112,7 +101,7 @@ def main():
                         help='For Saving the current Model')
     parser.add_argument('--compute_train_time', action='store_true', default=False,
                         help='To compute_train_time')
-    parser.add_argument('--compute_inference_time', action='store_true', default=True,
+    parser.add_argument('--compute_inference_time', action='store_true', default=False,
                         help='To compute_train_time')
     parser.add_argument('--compute_FLOPS', action='store_true', default=True,
                         help='To Compute FLOPS')
@@ -137,7 +126,7 @@ def main():
                                  './demo_material/cat_girl.jpg'],
                         nargs='+')
     parser.add_argument('--beam_size', type=int, default=5)
-    parser.add_argument('--plots_path', type=str, default='/home/arpitsah/Desktop/Fall-2023/odml/On_Device_Image_Captioning/benchmarking/plots')
+    parser.add_argument('--plots_path', type=str, default='On_Device_Image_Captioning/benchmarking/plots')
     args = parser.parse_args()
     torch.manual_seed(args.seed)
     
@@ -152,7 +141,7 @@ def main():
                            dropout=0.0,
                            drop_args=drop_args)
     
-    with open('/home/arpitsah/Desktop/Fall-2023/odml/On_Device_Image_Captioning/demo_material/demo_coco_tokens.pickle', 'rb') as f:
+    with open('On_Device_Image_Captioning/demo_material/demo_coco_tokens.pickle', 'rb') as f:
         coco_tokens = pickle.load(f)
         sos_idx = coco_tokens['word2idx_dict'][coco_tokens['sos_str']]
         eos_idx = coco_tokens['word2idx_dict'][coco_tokens['eos_str']]
