@@ -204,6 +204,9 @@ def load_state_dict_filtered(model, checkpoint, filter_prefixes="enc"):
     pretrained_state_dict = checkpoint['model_state_dict']
     new_state_dict = {}
     for key, value in pretrained_state_dict.items():
+        if 'swin_transf.patch_embed.proj.weight' in key: 
+            new_state_dict[key] = torch.nn.init.kaiming_uniform(torch.empty((192, 3, 3, 3)))
+            continue
         if filter_prefixes == "dec":
             if 'decoders.2' in key:
                 new_key = key.replace('decoders.2', 'decoders.1')
@@ -258,10 +261,10 @@ def distributed_train(rank,
         model_args.N_dec = 2   
     
     
-    img_size = 384
+    img_size = 288
     if train_args.is_end_to_end:
         from models.End_ExpansionNet_v2 import End_ExpansionNet_v2
-        model = End_ExpansionNet_v2(swin_img_size=img_size, swin_patch_size=4, swin_in_chans=3,
+        model = End_ExpansionNet_v2(swin_img_size=img_size, swin_patch_size=3, swin_in_chans=3,
                                     swin_embed_dim=192, swin_depths=[2, 2, 18, 2], swin_num_heads=[6, 12, 24, 48],
                                     swin_window_size=12, swin_mlp_ratio=4., swin_qkv_bias=True, swin_qk_scale=None,
                                     swin_drop_rate=0.0, swin_attn_drop_rate=0.0, swin_drop_path_rate=0.1,
@@ -475,7 +478,7 @@ if __name__ == "__main__":
     parser.add_argument('--num_accum', type=int, default=1)
     parser.add_argument('--num_gpus', type=int, default=1)
     parser.add_argument('--ddp_sync_port', type=int, default=12354)
-    parser.add_argument('--save_path', type=str, default="/home/arpitsah/Desktop/Fall-2023/odml/On_Device_Image_Captioning/pretrained_weights") #default='./github_ignore_material/saves/')
+    parser.add_argument('--save_path', type=str, default="./pretrained_weights") #default='./github_ignore_material/saves/')
     parser.add_argument('--save_every_minutes', type=int, default=25)
     parser.add_argument('--how_many_checkpoints', type=int, default=1)
     parser.add_argument('--print_every_iter', type=int, default=10)
@@ -489,9 +492,9 @@ if __name__ == "__main__":
     parser.add_argument('--scst_max_len', type=int, default=20)
     parser.add_argument('--num_epochs', type=int, default=5)
 
-    parser.add_argument('--image_folder', type=str, default="/home/arpitsah/Desktop/Fall-2023/odml/vizWiz/train")
+    parser.add_argument('--image_folder', type=str, default="VizWizData")
     parser.add_argument('--captions_path', type=str, default='./github_ignore_material/raw_data/')
-    parser.add_argument('--vocab_path', type=str, default="/home/arpitsah/Desktop/Fall-2023/odml/On_Device_Image_Captioning/vocab/coco_vocab_idx_dict.json")
+    parser.add_argument('--vocab_path', type=str, default="./vocab/coco_vocab_idx_dict.json")
     parser.add_argument('--partial_load', type=str2bool, default=False)
     parser.add_argument('--backbone_save_path', type=str, default='')
     parser.add_argument('--body_save_path', type=str, default='')
@@ -500,11 +503,11 @@ if __name__ == "__main__":
     parser.add_argument('--images_path', type=str, default="./github_ignore_material/raw_data/")
     parser.add_argument('--preproc_images_hdf5_filepath', type=str, default=None)
     parser.add_argument('--features_path', type=str, default="./github_ignore_material/raw_data/")
-    parser.add_argument('--pretrain_checkpoint', type=str, default="/home/arpitsah/Desktop/Fall-2023/odml/On_Device_Image_Captioning/pretrained_weights/rf_model.pth")
+    parser.add_argument('--pretrain_checkpoint', type=str, default="./pretrained_weights/rf_model.pth")
     
     parser.add_argument('--seed', type=int, default=1234)
     
-    parser.add_argument('--param_config', type=int, default=2, choices=[0, 1, 2],
+    parser.add_argument('--param_config', type=int, default=1, choices=[0, 1, 2],
                     help="Choose a mode: \n"
                          "0 - Baseline\n"
                          "1 - Remove layer in Encoder (Enc_dec)\n"
@@ -579,13 +582,13 @@ if __name__ == "__main__":
 
     if train_args.vizwiz: 
          if os.path.isfile(path_args.vocab_path):
-            with open("/home/arpitsah/Desktop/Fall-2023/odml/On_Device_Image_Captioning/vocab/coco_vocab_idx_dict.json", "r") as vocab_json: 
+            with open("./vocab/coco_vocab_idx_dict.json", "r") as vocab_json: 
                 coco_vocab_idx_dict = json.load(vocab_json)
          else: 
              coco_vocab_idx_dict = None
          # Currently testing with val_split, normally should set to 1 with train being True
          split = 1
-         dataset = VizWizDataset(split, train=True, coco_vocab_dict=coco_vocab_idx_dict)
+         dataset = VizWizDataset(split, train=True, coco_vocab_dict=coco_vocab_idx_dict, vizwiz_annotations_dir="VizWizData/annotations")
     else: 
         dataset = CocoDatasetKarpathy(
             images_path=path_args.images_path,
