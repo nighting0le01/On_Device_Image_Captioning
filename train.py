@@ -474,11 +474,11 @@ if __name__ == "__main__":
     parser.add_argument('--anneal_coeff', type=float, default=0.8)
     parser.add_argument('--anneal_every_epoch', type=float, default=3.0)
 
-    parser.add_argument('--batch_size', type=int, default=8)
+    parser.add_argument('--batch_size', type=int, default=1)
     parser.add_argument('--num_accum', type=int, default=1)
     parser.add_argument('--num_gpus', type=int, default=1)
-    parser.add_argument('--ddp_sync_port', type=int, default=12354)
-    parser.add_argument('--save_path', type=str, default="./pretrained_weights") #default='./github_ignore_material/saves/')
+    parser.add_argument('--ddp_sync_port', type=int, default=12324)
+    parser.add_argument('--save_path', type=str, default="/home/arpitsah/Desktop/Fall-2023/odml/On_Device_Image_Captioning/pretrained_weights/enc_dec/") #default='./github_ignore_material/saves/')
     parser.add_argument('--save_every_minutes', type=int, default=25)
     parser.add_argument('--how_many_checkpoints', type=int, default=1)
     parser.add_argument('--print_every_iter', type=int, default=10)
@@ -492,7 +492,7 @@ if __name__ == "__main__":
     parser.add_argument('--scst_max_len', type=int, default=20)
     parser.add_argument('--num_epochs', type=int, default=5)
 
-    parser.add_argument('--image_folder', type=str, default="VizWizData")
+    parser.add_argument('--image_folder', type=str, default="/home/arpitsah/Desktop/Fall-2023/odml/vizWiz")
     parser.add_argument('--captions_path', type=str, default='./github_ignore_material/raw_data/')
     parser.add_argument('--vocab_path', type=str, default="./vocab/coco_vocab_idx_dict.json")
     parser.add_argument('--partial_load', type=str2bool, default=False)

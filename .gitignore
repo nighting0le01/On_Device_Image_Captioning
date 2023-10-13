@@ -163,3 +163,5 @@ VizWizData/
 pretrained_weights/
 coco_annotations/
 vizWiz_Weights/
+github_ignore_material/
+pretrained_weightscheckpoint*

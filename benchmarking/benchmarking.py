@@ -103,7 +103,7 @@ def main():
                         help='To compute_train_time')
     parser.add_argument('--compute_inference_time', action='store_true', default=False,
                         help='To compute_train_time')
-    parser.add_argument('--compute_FLOPS', action='store_true', default=True,
+    parser.add_argument('--compute_FLOPS', action='store_true', default=False,
                         help='To Compute FLOPS')
     parser.add_argument('--compute_params', action='store_true', default=True,
                         help='To Compute parameters')
