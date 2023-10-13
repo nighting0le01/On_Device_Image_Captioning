@@ -236,6 +236,16 @@ def load_state_dict_filtered(model, checkpoint, filter_prefixes="enc"):
             new_state_dict[new_key] = value     
         
     model.load_state_dict(new_state_dict)
+    
+def load_base_state_dict(model, checkpoint):
+    new_state_dict = {}
+    for key, value in checkpoint.items():
+        if 'swin_transf.patch_embed.proj.weight' in key: 
+            new_state_dict[key] = torch.nn.init.kaiming_uniform(torch.empty((192, 3, 3, 3)))
+            continue
+        new_state_dict[key] = value
+    model.load_state_dict(new_state_dict)
+
             
 def distributed_train(rank,
                       world_size,
@@ -294,7 +304,7 @@ def distributed_train(rank,
         
     checkpoint = torch.load(path_args.pretrain_checkpoint)
     if model_args.param_config == 0:
-        model.load_state_dict(checkpoint['model_state_dict'])
+        load_base_state_dict(model, checkpoint['model_state_dict'])
         print("Baseline Model loaded ...")
         
     elif model_args.param_config == 1:
@@ -478,7 +488,7 @@ if __name__ == "__main__":
     parser.add_argument('--num_accum', type=int, default=1)
     parser.add_argument('--num_gpus', type=int, default=1)
     parser.add_argument('--ddp_sync_port', type=int, default=12324)
-    parser.add_argument('--save_path', type=str, default="/home/arpitsah/Desktop/Fall-2023/odml/On_Device_Image_Captioning/pretrained_weights/enc_dec/") #default='./github_ignore_material/saves/')
+    parser.add_argument('--save_path', type=str, default="/home/arpitsah/Desktop/Fall-2023/odml/On_Device_Image_Captioning/pretrained_weights/288_size_base/") #default='./github_ignore_material/saves/')
     parser.add_argument('--save_every_minutes', type=int, default=25)
     parser.add_argument('--how_many_checkpoints', type=int, default=1)
     parser.add_argument('--print_every_iter', type=int, default=10)
@@ -503,11 +513,11 @@ if __name__ == "__main__":
     parser.add_argument('--images_path', type=str, default="./github_ignore_material/raw_data/")
     parser.add_argument('--preproc_images_hdf5_filepath', type=str, default=None)
     parser.add_argument('--features_path', type=str, default="./github_ignore_material/raw_data/")
-    parser.add_argument('--pretrain_checkpoint', type=str, default="./pretrained_weights/rf_model.pth")
+    parser.add_argument('--pretrain_checkpoint', type=str, default="/home/arpitsah/Desktop/Fall-2023/odml/On_Device_Image_Captioning/pretrained_weights/rf_model.pth")
     
     parser.add_argument('--seed', type=int, default=1234)
     
-    parser.add_argument('--param_config', type=int, default=1, choices=[0, 1, 2],
+    parser.add_argument('--param_config', type=int, default=0, choices=[0, 1, 2],
                     help="Choose a mode: \n"
                          "0 - Baseline\n"
                          "1 - Remove layer in Encoder (Enc_dec)\n"
@@ -588,7 +598,7 @@ if __name__ == "__main__":
              coco_vocab_idx_dict = None
          # Currently testing with val_split, normally should set to 1 with train being True
          split = 1
-         dataset = VizWizDataset(split, train=True, coco_vocab_dict=coco_vocab_idx_dict, vizwiz_annotations_dir="VizWizData/annotations")
+         dataset = VizWizDataset(split, train=True, coco_vocab_dict=coco_vocab_idx_dict, vizwiz_annotations_dir="/home/arpitsah/Desktop/Fall-2023/odml/vizWiz/annotations")
     else: 
         dataset = CocoDatasetKarpathy(
             images_path=path_args.images_path,
