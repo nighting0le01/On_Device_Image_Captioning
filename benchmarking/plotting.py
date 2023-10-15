@@ -50,26 +50,25 @@ def plot(models, flops, latencies):
 models = ["BS + Input Size 192 (Resize)", "BS + Input Size 288 (Resize)", "Baseline (BS)"]
 parameter_counts = [233796164, 233799044, 233803076]
 flops = [123615946240, 123642488320, 158005560832]
-latencies = [1.620224995, 1.610214539, 1.752981628]
+latencies = [44.7269, 45.56102, 45.7656]
 rouge_l = [37.7, 36.54, 42.72]
 
 plt = plot(models, flops, latencies)
 plt.savefig("./benchmarking/plots/q7i.jpg")
-# plt1.show()
 
 models = ["BS + Input Size 288 (Resize)", "BS + Input Size 288 (Center Crop)"]
 parameter_counts = [233799044, 233799044]
 flops = [123642488320, 123642488320]
-latencies = [1.610214539, 1.666403973]
+latencies = [45.56102, 41.2919]
 rouge_l = [36.54, 33.46]
-plt = plot(models, parameter_counts, flops, latencies)
+plt = plot(models, flops, latencies)
 plt.savefig("./benchmarking/plots/q7ii.jpg")
 
 # Varying number of parameters
 models = ["BS + 1 Enc Rem + 1 Dec Rem", "BS + 1 Enc Rem", "Baseline (BS)"]
 parameter_counts = [224627524, 229372740, 233803076]
 flops = [115054609920, 120903841280, 158005560832]
-latencies = [1.477668808, 1.560195475, 1.752981628]
+latencies = [34.19839, 37.4676, 45.7656]
 rouge_l = [44.73, 43.51, 42.72]
 
 plt = plot(models, flops, latencies)
@@ -80,7 +79,7 @@ plt.savefig("./benchmarking/plots/q9.jpg")
 models = ["BS + 1 Enc Rem + 1 Dec Rem + Input Size 288 (Resize)", "BS + 1 Enc Rem + Input Size 288 (Resize)", "Baseline (BS)"]
 parameter_counts = [224623492, 229368708, 233803076]
 flops = [113451099648, 120866682368, 158005560832]
-latencies = [1.47267824, 1.553137628, 1.752981628]
+latencies = [20.5895, 28.05197, 45.7656]
 rouge_l = [43.11, 43.45, 42.72]
 
 plt = plot(models, flops, latencies)
