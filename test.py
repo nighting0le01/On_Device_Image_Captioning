@@ -21,6 +21,7 @@ from utils import language_utils
 from utils.language_utils import compute_num_pads as compute_num_pads
 from eval.eval import COCOEvalCap
 
+
 import warnings
 warnings.filterwarnings("ignore", category=UserWarning)
 
@@ -32,7 +33,46 @@ def convert_time_as_hhmmss(ticks):
     return str(int(ticks / 60)) + " m " + \
            str(int(ticks) % 60) + " s"
 
-
+def load_state_dict_filtered(model, checkpoint, filter_prefixes="enc"):
+    
+    pretrained_state_dict = checkpoint['model_state_dict']
+    new_state_dict = {}
+    for key, value in pretrained_state_dict.items():
+        if 'swin_transf.patch_embed.proj.weight' in key: 
+            new_state_dict[key] = torch.nn.init.kaiming_uniform(torch.empty((192, 3, 3, 3)))
+            continue
+        if filter_prefixes == "dec":
+            if 'decoders.2' in key:
+                new_key = key.replace('decoders.2', 'decoders.1')
+                new_state_dict[new_key] = value 
+                continue
+            elif 'dec_reduce_group.weight' in key:
+                split_index = value.shape[-1]// 3
+                first_part = value[:,:split_index]
+                last_part = value[:,-split_index:]
+                value = torch.hstack((first_part,last_part))
+                new_state_dict[key] =  value 
+                continue
+              
+        if 'encoders.2' in key:
+            new_key = key.replace('encoders.2', 'encoders.1')
+            new_state_dict[new_key] = value   
+            continue              
+        elif 'enc_reduce_group.weight' in key:
+            print("HERE!")
+            split_index = value.shape[-1]// 3
+            first_part = value[:,:split_index]
+            last_part = value[:,-split_index:]
+            value = torch.hstack((first_part,last_part))
+            new_state_dict[key] =  value 
+            print(value.shape)
+            continue
+        else:
+            new_key = key
+            new_state_dict[new_key] = value     
+        
+    model.load_state_dict(new_state_dict)
+            
 def compute_evaluation_loss(loss_function,
                             model,
                             data_set,
@@ -143,7 +183,7 @@ def evaluate_model(ddp_model,
             pred_sentence = language_utils.convert_allsentences_idx2word(output_words, y_idx2word_list)
             for sentence in pred_sentence:
                 sub_list_predictions.append(' '.join(sentence[1:-1]))  # remove EOS and SOS
-            print(sub_list_predictions[-1], validate_y[-1])
+            # print(sub_list_predictions[-1], validate_y[-1])
             del sub_batch_x, sub_batch_x_num_pads, output_words
 
     ddp_model.train()
@@ -250,10 +290,18 @@ def test(rank, world_size,
     os.environ['MASTER_PORT'] = ddp_sync_port
     dist.init_process_group("nccl", rank=rank, world_size=world_size)
 
-    img_size = 384
+    if model_args.param_config == 1:
+        model_args.N_enc = 2    
+        
+    elif model_args.param_config == 2:
+        model_args.N_enc = 2   
+        model_args.N_dec = 2   
+    
+    img_size = 288
+    print(model_args.N_enc, model_args.N_dec)
     if is_end_to_end:
         from models.End_ExpansionNet_v2 import End_ExpansionNet_v2
-        model = End_ExpansionNet_v2(swin_img_size=img_size, swin_patch_size=4, swin_in_chans=3,
+        model = End_ExpansionNet_v2(swin_img_size=img_size, swin_patch_size=3, swin_in_chans=3,
                                     swin_embed_dim=192, swin_depths=[2, 2, 18, 2], swin_num_heads=[6, 12, 24, 48],
                                     swin_window_size=12, swin_mlp_ratio=4., swin_qkv_bias=True, swin_qk_scale=None,
                                     swin_drop_rate=0.0, swin_attn_drop_rate=0.0, swin_drop_path_rate=0.1,
@@ -282,9 +330,9 @@ def test(rank, world_size,
                                 rank=rank)
 
     
-    # checkpoint = torch.load(model_args.pretrain_checkpoint)
-    # model.load_state_dict(checkpoint['model_state_dict'])
-    # print("Baseline Model loaded ...")
+        
+
+
     model.to(rank)
     ddp_model = DDP(model, device_ids=[rank])
 
@@ -434,6 +482,11 @@ if __name__ == "__main__":
     parser.add_argument('--save_every_minutes', type=int, default=25)
     parser.add_argument('--how_many_checkpoints', type=int, default=1)
     parser.add_argument('--print_every_iter', type=int, default=10)
+    parser.add_argument('--param_config', type=int, default=1, choices=[0, 1, 2],
+                    help="Choose a mode: \n"
+                         "0 - Baseline\n"
+                         "1 - Remove layer in Encoder (Enc_dec)\n"
+                         "2 - Remove layer from Encoder and Decoder (Enc_deco_dec)")
     
     
     
@@ -463,10 +516,11 @@ if __name__ == "__main__":
                            dropout=0.0,
                            drop_args=drop_args,
                            vizwiz = args.vizwiz,
-                           image_folder = args.image_folder
+                           image_folder = args.image_folder,
+                           param_config = args.param_config
                            )
 
-    
+    print(model_args.param_config)
     
     if args.vizwiz: 
          if os.path.isfile(args.vocab_path):
