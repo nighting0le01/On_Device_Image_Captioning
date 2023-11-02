@@ -3,40 +3,50 @@ from time import time
 from utils import language_utils
 
 import functools
+
 print = functools.partial(print, flush=True)
 
 
 class CocoDatasetKarpathy:
-
     TrainSet_ID = 1
     ValidationSet_ID = 2
     TestSet_ID = 3
 
-    def __init__(self,
-                 images_path,
-                 coco_annotations_path,
-                 train2014_bboxes_path,  # deprecated
-                 val2014_bboxes_path,
-                 precalc_features_hdf5_filepath,
-                 preproc_images_hdf5_filepath=None,
-                 limited_num_train_images=None,
-                 limited_num_val_images=None,
-                 limited_num_test_images=None,
-                 dict_min_occurrences=5,
-                 verbose=True
-                 ):
+    def __init__(
+        self,
+        images_path,
+        coco_annotations_path,
+        train2014_bboxes_path,  # deprecated
+        val2014_bboxes_path,
+        precalc_features_hdf5_filepath,
+        preproc_images_hdf5_filepath=None,
+        limited_num_train_images=None,
+        limited_num_val_images=None,
+        limited_num_test_images=None,
+        dict_min_occurrences=5,
+        verbose=True,
+    ):
         super(CocoDatasetKarpathy, self).__init__()
 
         self.use_images_instead_of_features = False
-        if precalc_features_hdf5_filepath is None or precalc_features_hdf5_filepath == 'None' or \
-                precalc_features_hdf5_filepath == 'none' or precalc_features_hdf5_filepath == '':
+        if (
+            precalc_features_hdf5_filepath is None
+            or precalc_features_hdf5_filepath == "None"
+            or precalc_features_hdf5_filepath == "none"
+            or precalc_features_hdf5_filepath == ""
+        ):
             self.use_images_instead_of_features = True
-            print("Warning: since no hdf5 path is provided using images instead of pre-calculated features.")
+            print(
+                "Warning: since no hdf5 path is provided using images instead of pre-calculated features."
+            )
             print("Features path: " + str(precalc_features_hdf5_filepath))
 
             self.preproc_images_hdf5_filepath = None
             if preproc_images_hdf5_filepath is not None:
-                print("Preprocessed hdf5 file path not None: " + str(preproc_images_hdf5_filepath))
+                print(
+                    "Preprocessed hdf5 file path not None: "
+                    + str(preproc_images_hdf5_filepath)
+                )
                 print("Using preprocessed hdf5 file instead.")
                 self.preproc_images_hdf5_filepath = preproc_images_hdf5_filepath
 
@@ -54,29 +64,34 @@ class CocoDatasetKarpathy:
         self.karpathy_val_dict = dict()
         self.karpathy_test_dict = dict()
 
-        with open(coco_annotations_path, 'r') as f:
-            json_file = json.load(f)['images']
+        with open(coco_annotations_path, "r") as f:
+            json_file = json.load(f)["images"]
 
         if verbose:
             print("Initializing dataset... ", end=" ")
         for json_item in json_file:
             new_item = dict()
 
-            new_item['img_path'] = self.images_path + json_item['filepath'] + '/img/' + json_item['filename']
+            new_item["img_path"] = (
+                self.images_path
+                + json_item["filepath"]
+                + "/img/"
+                + json_item["filename"]
+            )
 
-            new_item_captions = [item['raw'] for item in json_item['sentences']]
-            new_item['img_id'] = json_item['cocoid']
-            new_item['captions'] = new_item_captions
+            new_item_captions = [item["raw"] for item in json_item["sentences"]]
+            new_item["img_id"] = json_item["cocoid"]
+            new_item["captions"] = new_item_captions
 
-            if json_item['split'] == 'train' or json_item['split'] == 'restval':
-                self.karpathy_train_dict[json_item['cocoid']] = new_item
-            elif json_item['split'] == 'test':
-                self.karpathy_test_dict[json_item['cocoid']] = new_item
-            elif json_item['split'] == 'val':
-                self.karpathy_val_dict[json_item['cocoid']] = new_item
+            if json_item["split"] == "train" or json_item["split"] == "restval":
+                self.karpathy_train_dict[json_item["cocoid"]] = new_item
+            elif json_item["split"] == "test":
+                self.karpathy_test_dict[json_item["cocoid"]] = new_item
+            elif json_item["split"] == "val":
+                self.karpathy_val_dict[json_item["cocoid"]] = new_item
 
-        #self.add_bboxes(train2014_bboxes_path)
-        #self.add_bboxes(val2014_bboxes_path)
+        # self.add_bboxes(train2014_bboxes_path)
+        # self.add_bboxes(val2014_bboxes_path)
 
         self.karpathy_train_list = []
         self.karpathy_val_list = []
@@ -93,7 +108,9 @@ class CocoDatasetKarpathy:
         self.test_num_images = len(self.karpathy_test_list)
 
         if limited_num_train_images is not None:
-            self.karpathy_train_list = self.karpathy_train_list[:limited_num_train_images]
+            self.karpathy_train_list = self.karpathy_train_list[
+                :limited_num_train_images
+            ]
             self.train_num_images = limited_num_train_images
         if limited_num_val_images is not None:
             self.karpathy_val_list = self.karpathy_val_list[:limited_num_val_images]
@@ -109,11 +126,11 @@ class CocoDatasetKarpathy:
 
         tokenized_captions_list = []
         for i in range(self.train_num_images):
-            for caption in self.karpathy_train_list[i]['captions']:
+            for caption in self.karpathy_train_list[i]["captions"]:
                 tmp = language_utils.lowercase_and_clean_trailing_spaces([caption])
                 tmp = language_utils.add_space_between_non_alphanumeric_symbols(tmp)
                 tmp = language_utils.remove_punctuations(tmp)
-                tokenized_caption = ['SOS'] + language_utils.tokenize(tmp)[0] + ['EOS']
+                tokenized_caption = ["SOS"] + language_utils.tokenize(tmp)[0] + ["EOS"]
                 tokenized_captions_list.append(tokenized_caption)
 
         counter_dict = dict()
@@ -129,19 +146,28 @@ class CocoDatasetKarpathy:
             if v < dict_min_occurrences:
                 less_than_min_occurrences_set.add(k)
         if verbose:
-            print("tot tokens " + str(len(counter_dict)) +
-                  " less than " + str(dict_min_occurrences) + ": " + str(len(less_than_min_occurrences_set)) +
-                  " remaining: " + str(len(counter_dict) - len(less_than_min_occurrences_set)))
+            print(
+                "tot tokens "
+                + str(len(counter_dict))
+                + " less than "
+                + str(dict_min_occurrences)
+                + ": "
+                + str(len(less_than_min_occurrences_set))
+                + " remaining: "
+                + str(len(counter_dict) - len(less_than_min_occurrences_set))
+            )
 
         self.num_caption_vocab = 4
         self.max_seq_len = 0
-        discovered_words = ['PAD', 'SOS', 'EOS', 'UNK']
+        discovered_words = ["PAD", "SOS", "EOS", "UNK"]
         for i in range(len(tokenized_captions_list)):
             caption = tokenized_captions_list[i]
             if len(caption) > self.max_seq_len:
                 self.max_seq_len = len(caption)
             for word in caption:
-                if (word not in discovered_words) and (not word in less_than_min_occurrences_set):
+                if (word not in discovered_words) and (
+                    not word in less_than_min_occurrences_set
+                ):
                     discovered_words.append(word)
                     self.num_caption_vocab += 1
 
@@ -176,16 +202,15 @@ class CocoDatasetKarpathy:
     """
 
     def get_image_path(self, img_idx, dataset_split):
-
         if dataset_split == CocoDatasetKarpathy.TestSet_ID:
-            img_path = self.karpathy_test_list[img_idx]['img_path']
-            img_id = self.karpathy_test_list[img_idx]['img_id']
+            img_path = self.karpathy_test_list[img_idx]["img_path"]
+            img_id = self.karpathy_test_list[img_idx]["img_id"]
         elif dataset_split == CocoDatasetKarpathy.ValidationSet_ID:
-            img_path = self.karpathy_val_list[img_idx]['img_path']
-            img_id = self.karpathy_val_list[img_idx]['img_id']
+            img_path = self.karpathy_val_list[img_idx]["img_path"]
+            img_id = self.karpathy_val_list[img_idx]["img_id"]
         else:
-            img_path = self.karpathy_train_list[img_idx]['img_path']
-            img_id = self.karpathy_train_list[img_idx]['img_id']
+            img_path = self.karpathy_train_list[img_idx]["img_path"]
+            img_id = self.karpathy_train_list[img_idx]["img_id"]
 
         return img_path, img_id
 
@@ -200,29 +225,29 @@ class CocoDatasetKarpathy:
             dataset = self.karpathy_train_list
 
         for img_idx in range(len(dataset)):
-            all_image_references.append(dataset[img_idx]['captions'])
+            all_image_references.append(dataset[img_idx]["captions"])
         return all_image_references
 
     def get_eos_token_idx(self):
-        return self.caption_word2idx_dict['EOS']
+        return self.caption_word2idx_dict["EOS"]
 
     def get_sos_token_idx(self):
-        return self.caption_word2idx_dict['SOS']
+        return self.caption_word2idx_dict["SOS"]
 
     def get_pad_token_idx(self):
-        return self.caption_word2idx_dict['PAD']
+        return self.caption_word2idx_dict["PAD"]
 
     def get_unk_token_idx(self):
-        return self.caption_word2idx_dict['UNK']
+        return self.caption_word2idx_dict["UNK"]
 
     def get_eos_token_str(self):
-        return 'EOS'
+        return "EOS"
 
     def get_sos_token_str(self):
-        return 'SOS'
+        return "SOS"
 
     def get_pad_token_str(self):
-        return 'PAD'
+        return "PAD"
 
     def get_unk_token_str(self):
-        return 'UNK'
+        return "UNK"

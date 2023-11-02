@@ -13,9 +13,13 @@ class TransparentDataLoader:
 
     def get_next_batch(self):
         raise NotImplementedError
-    
+
     def set_epoch_it(self, epoch, verbose=False):
-        assert (epoch < len(self.array_of_init_seeds)), "requested epoch higher than the maximum: " + str(len(self.array_of_init_seeds))
+        assert epoch < len(
+            self.array_of_init_seeds
+        ), "requested epoch higher than the maximum: " + str(
+            len(self.array_of_init_seeds)
+        )
         self.epoch_it = epoch
         self.init_epoch(epoch_it=self.epoch_it, verbose=verbose)
 
@@ -43,27 +47,31 @@ class TransparentDataLoader:
         return self.batch_size
 
     def save_state(self):
-        return {'batch_it': self.batch_it[self.rank],
-                'epoch_it': self.epoch_it,
-                'batch_size': self.batch_size,
-                'array_of_init_seed': self.array_of_init_seeds}
+        return {
+            "batch_it": self.batch_it[self.rank],
+            "epoch_it": self.epoch_it,
+            "batch_size": self.batch_size,
+            "array_of_init_seed": self.array_of_init_seeds,
+        }
 
     def load_state(self, state):
-        self.array_of_init_seeds = state['array_of_init_seed']
-        self.batch_size = state['batch_size']
-        self.set_epoch_it(state['epoch_it'])
-        self.batch_it[self.rank] = state['batch_it']
-
+        self.array_of_init_seeds = state["array_of_init_seed"]
+        self.batch_size = state["batch_size"]
+        self.set_epoch_it(state["epoch_it"])
+        self.batch_it[self.rank] = state["batch_it"]
 
     def add_pad_according_to_batch(self, batch_sentences, pad_symbol):
         batch_size = len(batch_sentences)
-        list_of_lengthes = [len(batch_sentences[batch_idx]) for batch_idx in range(batch_size)]
+        list_of_lengthes = [
+            len(batch_sentences[batch_idx]) for batch_idx in range(batch_size)
+        ]
         in_batch_max_seq_len = max(list_of_lengthes)
         batch_num_pads = []
         new_batch_sentences = []
         for batch_idx in range(batch_size):
             num_pads = in_batch_max_seq_len - len(batch_sentences[batch_idx])
-            new_batch_sentences.append(batch_sentences[batch_idx] \
-                                        + [pad_symbol] * (num_pads))
+            new_batch_sentences.append(
+                batch_sentences[batch_idx] + [pad_symbol] * (num_pads)
+            )
             batch_num_pads.append(num_pads)
         return new_batch_sentences, batch_num_pads

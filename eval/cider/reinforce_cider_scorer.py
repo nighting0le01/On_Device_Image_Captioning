@@ -25,38 +25,37 @@ def precook(s, n=4, out=False):
     counts = defaultdict(int)
     for k in range(1, n + 1):
         for i in range(len(words) - k + 1):
-            ngram = tuple(words[i:i + k])
+            ngram = tuple(words[i : i + k])
             counts[ngram] += 1
     return counts
 
 
 def cook_refs(refs, n=4):  ## lhuang: oracle will call with "average"
-    '''Takes a list of reference sentences for a single segment
+    """Takes a list of reference sentences for a single segment
     and returns an object that encapsulates everything that BLEU
     needs to know about them.
     :param refs: list of string : reference sentences for some image
     :param n: int : number of ngrams for which (ngram) representation is calculated
     :return: result (list of dict)
-    '''
+    """
     return [precook(ref, n) for ref in refs]
 
 
 def cook_test(test, n=4):
-    '''Takes a test sentence and returns an object that
+    """Takes a test sentence and returns an object that
     encapsulates everything that BLEU needs to know about it.
     :param test: list of string : hypothesis sentence for some image
     :param n: int : number of ngrams for which (ngram) representation is calculated
     :return: result (dict)
-    '''
+    """
     return precook(test, n, True)
 
 
 class ReinforceCiderScorer(object):
-    """CIDEr scorer.
-    """
+    """CIDEr scorer."""
 
     def __init__(self, corpus_crefs, n=4, sigma=6.0):
-        ''' singular instance '''
+        """singular instance"""
         self.n = n
         self.sigma = sigma
 
@@ -67,14 +66,13 @@ class ReinforceCiderScorer(object):
         self.document_frequency = self.compute_doc_freq(df_crefs)
         self.corpus_ref_len = np.log(float(len(df_crefs)))
 
-
     def compute_doc_freq(self, df_crefs):
-        '''
+        """
         Compute term frequency for reference data.
         This will be used to compute idf (inverse document frequency later)
         The term frequency is stored in the object
         :return: None
-        '''
+        """
         document_frequency = defaultdict(float)
         for refs in df_crefs:
             # refs, k ref captions of one image
@@ -84,7 +82,6 @@ class ReinforceCiderScorer(object):
         return document_frequency
 
     def compute_cider(self, refs, tests):
-
         ctest = []
         crefs = []
         for idx in range(len(tests)):
@@ -105,7 +102,7 @@ class ReinforceCiderScorer(object):
             vec = [defaultdict(float) for _ in range(self.n)]
             length = 0
             norm = [0.0 for _ in range(self.n)]
-            for (ngram, term_freq) in cnts.items():
+            for ngram, term_freq in cnts.items():
                 # give word count 1 if it doesn't appear in reference corpus
                 df = np.log(max(1.0, self.document_frequency[ngram]))
                 # ngram index
@@ -121,7 +118,7 @@ class ReinforceCiderScorer(object):
             return vec, norm, length
 
         def sim(vec_hyp, vec_ref, norm_hyp, norm_ref, length_hyp, length_ref):
-            '''
+            """
             Compute the cosine similarity of two vectors.
             :param vec_hyp: array of dictionary for vector corresponding to hypothesis
             :param vec_ref: array of dictionary for vector corresponding to reference
@@ -130,22 +127,24 @@ class ReinforceCiderScorer(object):
             :param length_hyp: int containing length of hypothesis
             :param length_ref: int containing length of reference
             :return: array of score for each n-grams cosine similarity
-            '''
+            """
             delta = float(length_hyp - length_ref)
             # measure consine similarity
             val = np.array([0.0 for _ in range(self.n)])
             for n in range(self.n):
                 # ngram
-                for (ngram, count) in vec_hyp[n].items():
+                for ngram, count in vec_hyp[n].items():
                     # vrama91 : added clipping
-                    val[n] += min(vec_hyp[n][ngram], vec_ref[n][ngram]) * vec_ref[n][ngram]
+                    val[n] += (
+                        min(vec_hyp[n][ngram], vec_ref[n][ngram]) * vec_ref[n][ngram]
+                    )
 
                 if (norm_hyp[n] != 0) and (norm_ref[n] != 0):
-                    val[n] /= (norm_hyp[n] * norm_ref[n])
+                    val[n] /= norm_hyp[n] * norm_ref[n]
 
-                assert (not math.isnan(val[n]))
+                assert not math.isnan(val[n])
                 # vrama91: added a length based gaussian penalty
-                val[n] *= np.e ** (-(delta ** 2) / (2 * self.sigma ** 2))
+                val[n] *= np.e ** (-(delta**2) / (2 * self.sigma**2))
             return val
 
         # compute log reference length
@@ -172,6 +171,7 @@ class ReinforceCiderScorer(object):
     """
     refs must be contained in the dataset for document frequency
     """
+
     def compute_score(self, refs, tests, option=None, verbose=0):
         # compute idf
         # self.compute_doc_freq()

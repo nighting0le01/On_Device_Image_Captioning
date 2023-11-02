@@ -1,14 +1,13 @@
-
 import torch
 import torch.nn as nn
 
 
 class LabelSmoothingLoss(nn.Module):
-    def __init__(self, smoothing_coeff, rank='cuda:0'):
+    def __init__(self, smoothing_coeff, rank="cuda:0"):
         assert 0.0 <= smoothing_coeff <= 1.0
         super().__init__()
         self.smoothing_coeff = smoothing_coeff
-        self.kl_div = nn.KLDivLoss(reduction='none')
+        self.kl_div = nn.KLDivLoss(reduction="none")
         self.log_softmax = nn.LogSoftmax(dim=-1)
 
         self.rank = rank
@@ -17,7 +16,9 @@ class LabelSmoothingLoss(nn.Module):
         pred = self.log_softmax(pred)
 
         batch_size, seq_len, num_classes = pred.shape
-        uniform_confidence = self.smoothing_coeff / (num_classes - 1)  # minus one cause of PAD token
+        uniform_confidence = self.smoothing_coeff / (
+            num_classes - 1
+        )  # minus one cause of PAD token
         confidence = 1 - self.smoothing_coeff
         one_hot = torch.full((num_classes,), uniform_confidence).to(self.rank)
         model_prob = one_hot.repeat(batch_size, seq_len, 1)
