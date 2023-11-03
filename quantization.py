@@ -17,16 +17,18 @@ from data.vizwiz_dataloader import VizWizDataLoader
 from models.End_ExpansionNet_v2 import (
     End_ExpansionNet_v2_Encoder,
     End_ExpansionNet_v2_Decoder,
+    E2E_ExpansionNet_Captioner
 )
 
 from utils import language_utils
-from utils.language_utils import compute_num_pads as compute_num_pads
+from utils.language_utils import compute_num_pads, tokens2description
 from utils.image_utils import preprocess_image
 from utils.quantization_utils import (
     calibrate_enc_dec,
     prepare_model,
     quantize_model,
     quantize_encoder_decoder,
+    print_size_of_model
 )
 
 encoder_modules = [
@@ -120,6 +122,24 @@ def load_models(
     )
 
     return encoder_model, decoder_model
+def demo_quantized_model(encoder, decoder, sos_idx, eos_idx, device="cpu"): 
+       
+        demo_image_path = "./demo_material/micheal.jpg"
+        demo_image = preprocess_image(demo_image_path, img_size)
+
+        encoder.to(device)
+        decoder.to(device)
+
+        captioner = E2E_ExpansionNet_Captioner(beam_search_arg_defaults, split_encoder=True, encoder=encoder,
+                                               decoder=decoder, rank=device)
+        with torch.no_grad():
+            pred, _ = captioner(enc_x=demo_image.to(device),
+                                enc_x_num_pads=[0], mode="beam_search")
+   
+        pred = tokens2description(pred[0][0], dataset.caption_idx2word_list, sos_idx, eos_idx)
+        print(' \n\tDescription: ' + pred + '\n')
+
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Image Captioning")
@@ -130,7 +150,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--save_model_path",
         type=str,
-        default="/usr0/home/nvaikunt/On_Device_Image_Captioning/pretrained_weights/4_th.pth",
+        default="/usr0/home/nvaikunt/On_Device_Image_Captioning/pretrained_weights/rf_model.pth",
     )
     parser.add_argument("--eval_beam_sizes", type=str2list, default=[3])
     parser.add_argument("--image_folder", type=str, default="./VizWizData")
@@ -157,15 +177,7 @@ if __name__ == "__main__":
     parser.add_argument("--demo", type=str2bool, default=False)
 
     args = parser.parse_args()
-    args.ddp_sync_port = str(args.ddp_sync_port)
 
-    assert (
-        args.eval_parallel_batch_size % args.num_gpus == 0
-    ), "num gpus must be multiple of the requested parallel batch size"
-
-    print("is_ensemble: " + str(args.is_ensemble))
-    print("eval parallel batch_size: " + str(args.eval_parallel_batch_size))
-    print("ddp_sync_port: " + str(args.ddp_sync_port))
     print("save_model_path: " + str(args.save_model_path))
 
     drop_args = Namespace(enc=0.0, dec=0.0, enc_input=0.0, dec_input=0.0, other=0.0)
@@ -178,7 +190,6 @@ if __name__ == "__main__":
         drop_args=drop_args,
         vizwiz=args.vizwiz,
         image_folder=args.image_folder,
-        param_config=args.param_config,
     )
 
     quant_args = Namespace(
@@ -186,8 +197,6 @@ if __name__ == "__main__":
         calibration_steps=args.calibration_steps,
         static_qconfig_str=args.static_qconfig,
     )
-
-    print(model_args.param_config)
 
     dataset = None
     if args.vizwiz:
@@ -220,8 +229,8 @@ if __name__ == "__main__":
                                 'beam_max_seq_len': model_max_len,
                                 'sample_or_max': 'max',
                                 'how_many_outputs': 1, }
-    encoder_model, decoder_model = load_models(state_dict, model_args,
-                                               dataset, img_size=img_size, device=device)
+    encoder_model, decoder_model = load_models(model_args, dataset,
+                                              model_max_len, img_size=img_size, device=device)
 
     encoder_state_dict = filter_state_dict(state_dict, encoder_modules)
     decoder_state_dict = filter_state_dict(state_dict, decoder_modules)
@@ -243,10 +252,31 @@ if __name__ == "__main__":
                                    verbose=True)
     if quant_args.static:
         static_qconfig_str = quant_args.static_qconfig_str
-        config_mapping = get_default_qconfig_mapping(static_qconfig_str)
+        qconfig_mapping = get_default_qconfig_mapping(static_qconfig_str)
     else:
         qconfig_mapping = QConfigMapping().set_global(torch.ao.quantization.default_dynamic_qconfig)
 
     quantized_encoder, quantized_decoder = quantize_encoder_decoder(encoder_model, decoder_model,
                                                                     data_loader, 3, qconfig_mapping, device,
                                                                     static=quant_args.static)
+    # Save models 
+    orig_file_name = ckpt_path.split("/")[-1]
+    if args.static: 
+        model_type = "static"
+    else: 
+        model_type = "dynamic"
+    encoder_save_file = f"{model_type}_quantized_encoder_{orig_file_name}"
+    decoder_save_file = f"{model_type}_quantized_decoder_{orig_file_name}"
+    torch.save(quantized_encoder.state_dict(), os.path.join(args.save_path, encoder_save_file))
+    torch.save(quantized_decoder.state_dict(), os.path.join(args.save_path, decoder_save_file))
+
+    # Print Info
+    print_size_of_model(encoder_model)
+    print_size_of_model(decoder_model)
+    print_size_of_model(quantized_encoder)
+    print_size_of_model(quantized_decoder)
+                                                                     
+    if args.demo:
+        demo_quantized_model(quantized_encoder, quantized_decoder,
+                             sos_idx=dataset.get_sos_token_idx(), eos_idx=dataset.get_eos_token_idx())
+
