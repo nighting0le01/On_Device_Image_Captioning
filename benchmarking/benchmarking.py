@@ -60,12 +60,13 @@ def compute_inference_Latency(model,
                               num_runs,
                               img_size,coco_tokens,
                               sos_idx,eos_idx,beam_size,
-                              max_seq_len,plots_path):
+                              max_seq_len,plots_path,device):
+        model  =model.to(device)
         model.eval()
         inference_times = []
         runs = num_runs
         for run in range(runs):
-            input_data = torch.randn(1, 3, img_size, img_size)
+            input_data = torch.randn(1, 3, img_size, img_size).to(device)
             beam_search_kwargs = {'beam_size': beam_size,
                                 'beam_max_seq_len': max_seq_len,
                                 'sample_or_max': 'max',
@@ -101,11 +102,11 @@ def main():
                         help='For Saving the current Model')
     parser.add_argument('--compute_train_time', action='store_true', default=False,
                         help='To compute_train_time')
-    parser.add_argument('--compute_inference_time', action='store_true', default=False,
+    parser.add_argument('--compute_inference_time', action='store_true', default=True,
                         help='To compute_train_time')
     parser.add_argument('--compute_FLOPS', action='store_true', default=False,
                         help='To Compute FLOPS')
-    parser.add_argument('--compute_params', action='store_true', default=True,
+    parser.add_argument('--compute_params', action='store_true', default=False,
                         help='To Compute parameters')
     parser.add_argument('--img_size', type=int, default=384,
                         help=' Image size for Swin Transformer')
@@ -127,6 +128,7 @@ def main():
                         nargs='+')
     parser.add_argument('--beam_size', type=int, default=5)
     parser.add_argument('--plots_path', type=str, default='On_Device_Image_Captioning/benchmarking/plots')
+    parser.add_argument('--device', type=str, default='cuda:0')
     args = parser.parse_args()
     torch.manual_seed(args.seed)
     
@@ -141,7 +143,7 @@ def main():
                            dropout=0.0,
                            drop_args=drop_args)
     
-    with open('On_Device_Image_Captioning/demo_material/demo_coco_tokens.pickle', 'rb') as f:
+    with open('/On_Device_Image_Captioning/demo_material/demo_coco_tokens.pickle', 'rb') as f:
         coco_tokens = pickle.load(f)
         sos_idx = coco_tokens['word2idx_dict'][coco_tokens['sos_str']]
         eos_idx = coco_tokens['word2idx_dict'][coco_tokens['eos_str']]
@@ -162,10 +164,10 @@ def main():
                                 output_word2idx=coco_tokens['word2idx_dict'],
                                 output_idx2word=coco_tokens['idx2word_list'],
                                 max_seq_len=args.max_seq_len, drop_args=model_args.drop_args,
-                                rank='cpu')
+                                rank=args.device)
     
-    checkpoint = torch.load(args.load_path)
-    model.load_state_dict(checkpoint['model_state_dict'])
+    # checkpoint = torch.load(args.load_path)
+    # model.load_state_dict(checkpoint['model_state_dict'])
     print("Model loaded ...")
     
         
@@ -183,7 +185,7 @@ def main():
         print(model)
         compute_inference_Latency(model=model,num_runs=100,img_size=args.img_size,coco_tokens=coco_tokens,
                                   sos_idx=sos_idx,eos_idx=eos_idx,
-                                  beam_size=args.beam_size,max_seq_len= args.max_seq_len,plots_path=args.plots_path)
+                                  beam_size=args.beam_size,max_seq_len= args.max_seq_len,plots_path=args.plots_path,device = args.device)
         return
 
 if __name__ == "__main__":
