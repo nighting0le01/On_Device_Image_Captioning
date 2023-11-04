@@ -111,7 +111,7 @@ def evaluate_quantized_model(
             # print(sub_list_predictions[-1], validate_y[-1])
             del sub_batch_x, sub_batch_x_num_pads, output_words
 
-    if rank == 0 and verbose:
+    if (rank == 0 or rank == "cpu") and verbose:
         # dirty code to leave the evaluation code untouched
         list_predictions = [sub_predictions for sub_predictions in sub_list_predictions]
         list_list_references = [
