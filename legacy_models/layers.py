@@ -49,7 +49,7 @@ class StaticExpansionBlock(nn.Module):
         bias_exp = self.bias_exp_vectors(n_indexes)
         x_key = self.key_embed(x)
 
-        z = torch.matmul(query_exp, x_key.transpose(-1, -2)) / (self.d_model**0.5)
+        z = torch.matmul(query_exp, x_key.transpose(-1, -2)) / (self.d_model ** 0.5)
         z = self.Z_dropout(z)
 
         class_a_fw = F.relu(z)
@@ -74,20 +74,8 @@ class StaticExpansionBlock(nn.Module):
             from_idx = accum
             to_idx = accum + self.num_enc_exp_list[j]
             accum += self.num_enc_exp_list[j]
-            class_a_bw_list.append(
-                class_a_bw[:, :, from_idx:to_idx]
-                / (
-                    class_a_bw[:, :, from_idx:to_idx].sum(dim=-1, keepdim=True)
-                    + self.eps
-                )
-            )
-            class_b_bw_list.append(
-                class_b_bw[:, :, from_idx:to_idx]
-                / (
-                    class_b_bw[:, :, from_idx:to_idx].sum(dim=-1, keepdim=True)
-                    + self.eps
-                )
-            )
+            class_a_bw_list.append(class_a_bw[:, :, from_idx:to_idx] / (class_a_bw[:, :, from_idx:to_idx].sum(dim=-1, keepdim=True) + self.eps))
+            class_b_bw_list.append(class_b_bw[:, :, from_idx:to_idx] / (class_b_bw[:, :, from_idx:to_idx].sum(dim=-1, keepdim=True) + self.eps))
         class_a_bw = torch.cat(class_a_bw_list, dim=-1)
         class_b_bw = torch.cat(class_b_bw_list, dim=-1)
 
@@ -110,9 +98,7 @@ class EncoderLayer(nn.Module):
         self.dropout_1 = nn.Dropout(dropout_perc)
         self.dropout_2 = nn.Dropout(dropout_perc)
 
-        self.stc_exp = StaticExpansionBlock(
-            d_model, num_enc_exp_list, dropout_perc, eps
-        )
+        self.stc_exp = StaticExpansionBlock(d_model, num_enc_exp_list, dropout_perc, eps)
         self.ff = FeedForward(d_model, d_ff, dropout_perc)
 
     def forward(self, x, n_indexes, mask):
@@ -159,15 +145,11 @@ class DynamicExpansionBlock(nn.Module):
         bias_exp = (bias_exp + cond).view(bs, dec_len * self.num_exp, self.d_model)
 
         x_key = self.key_linear(x)
-        z = torch.matmul(query_exp, x_key.transpose(-1, -2)) / (self.d_model**0.5)
+        z = torch.matmul(query_exp, x_key.transpose(-1, -2)) / (self.d_model ** 0.5)
         z = self.Z_dropout(z)
 
-        mod_mask_1 = (
-            mask.unsqueeze(2)
-            .expand(bs, dec_len, self.num_exp, dec_len)
-            .contiguous()
-            .view(bs, dec_len * self.num_exp, dec_len)
-        )
+        mod_mask_1 = mask.unsqueeze(2).expand(bs, dec_len, self.num_exp, dec_len).contiguous(). \
+            view(bs, dec_len * self.num_exp, dec_len)
 
         class_a_fw = F.relu(z)
         class_b_fw = F.relu(-z)
@@ -180,12 +162,8 @@ class DynamicExpansionBlock(nn.Module):
         class_a = self.dropout_class_a_fw(class_a)
         class_b = self.dropout_class_b_fw(class_b)
 
-        mod_mask_2 = (
-            mask.unsqueeze(-1)
-            .expand(bs, dec_len, dec_len, self.num_exp)
-            .contiguous()
-            .view(bs, dec_len, dec_len * self.num_exp)
-        )
+        mod_mask_2 = mask.unsqueeze(-1).expand(bs, dec_len, dec_len, self.num_exp).contiguous(). \
+            view(bs, dec_len, dec_len * self.num_exp)
 
         class_a_bw = F.relu(z.transpose(-2, -1))
         class_b_bw = F.relu(-z.transpose(-2, -1))
@@ -219,33 +197,20 @@ class DecoderLayer(nn.Module):
         self.dyn_exp = DynamicExpansionBlock(d_model, num_exp, dropout_perc, eps)
         self.ff = FeedForward(d_model, d_ff, dropout_perc)
 
-    def forward(
-        self,
-        x,
-        n_indexes,
-        cross_connection_x,
-        input_attention_mask,
-        cross_attention_mask,
-    ):
+    def forward(self, x, n_indexes, cross_connection_x, input_attention_mask, cross_attention_mask):
+
         # Pre-LayerNorm
         x2 = self.norm_1(x)
-        x = x + self.dropout_1(
-            self.dyn_exp(x=x2, n_indexes=n_indexes, mask=input_attention_mask)
-        )
+        x = x + self.dropout_1(self.dyn_exp(x=x2, n_indexes=n_indexes, mask=input_attention_mask))
 
         x2 = self.norm_2(x)
-        x = x + self.dropout_2(
-            self.mha(
-                q=x2,
-                k=cross_connection_x,
-                v=cross_connection_x,
-                mask=cross_attention_mask,
-            )
-        )
+        x = x + self.dropout_2(self.mha(q=x2, k=cross_connection_x, v=cross_connection_x,
+                                        mask=cross_attention_mask))
 
         x2 = self.norm_3(x)
         x = x + self.dropout_3(self.ff(x2))
         return x
+
 
 
 class MultiHeadAttention(nn.Module):
@@ -277,7 +242,7 @@ class MultiHeadAttention(nn.Module):
         v_proj = v_proj.transpose(2, 1)
 
         sim_scores = torch.matmul(q_proj, k_proj.transpose(3, 2))
-        sim_scores = sim_scores / self.d_k**0.5
+        sim_scores = sim_scores / self.d_k ** 0.5
 
         if mask is not None:
             mask = mask.unsqueeze(1).repeat(1, self.num_heads, 1, 1)
@@ -285,11 +250,8 @@ class MultiHeadAttention(nn.Module):
         sim_scores = F.softmax(input=sim_scores, dim=-1)
 
         attention_applied = torch.matmul(sim_scores, v_proj)
-        attention_applied_concatenated = (
-            attention_applied.permute(0, 2, 1, 3)
-            .contiguous()
+        attention_applied_concatenated = attention_applied.permute(0, 2, 1, 3).contiguous()\
             .view(batch_size, q_seq_len, self.d_model)
-        )
 
         out = self.out_linear(attention_applied_concatenated)
         return out

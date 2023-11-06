@@ -1,4 +1,4 @@
-__author__ = 'tylin'
+__author__ = "tylin"
 from eval.tokenizer.ptbtokenizer import PTBTokenizer
 from eval.bleu.bleu import Bleu
 from eval.meteor.meteor import Meteor
@@ -12,8 +12,12 @@ I do not own the rights of this code, I just  modified it according to my needs.
 The original version can be found in:
 https://github.com/cocodataset/cocoapi
 """
+
+
 class COCOEvalCap:
-    def __init__(self, dataset_gts_anns, pred_anns, pred_img_ids, get_stanford_models_path=None):
+    def __init__(
+        self, dataset_gts_anns, pred_anns, pred_img_ids, get_stanford_models_path=None
+    ):
         self.evalImgs = []
         self.eval = {}
         self.imgToEval = {}
@@ -22,10 +26,13 @@ class COCOEvalCap:
         self.pred_img_ids = pred_img_ids
 
         import subprocess
+
         # print("invoking " + str(get_stanford_models_path))
         rc = subprocess.call(get_stanford_models_path)
 
-    def evaluate(self, bleu=True, rouge=True, cider=True, spice=True, meteor=True, verbose=True):
+    def evaluate(
+        self, bleu=True, rouge=True, cider=True, spice=True, meteor=True, verbose=True
+    ):
         # imgIds = self.coco.getImgIds()
         gts = {}
         res = {}
@@ -36,7 +43,7 @@ class COCOEvalCap:
         # =================================================
         # Set up scorers
         # =================================================
-        #if verbose:
+        # if verbose:
         #    print('tokenization...')
         tokenizer = PTBTokenizer()
         gts = tokenizer.tokenize(gts)
@@ -45,7 +52,7 @@ class COCOEvalCap:
         # =================================================
         # Set up scorers
         # =================================================
-        #if verbose:
+        # if verbose:
         #    print('setting up scorers...')
         scorers = []
         if cider:
