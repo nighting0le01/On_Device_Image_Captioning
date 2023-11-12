@@ -94,10 +94,10 @@ def compute_inference_Latency(
             "eos_idx": eos_idx,
         }
     captioner = E2E_ExpansionNet_Captioner(beam_search_kwargs, split_encoder=True, encoder=encoder,
-                                               decoder=decoder, rank="cpu")
+                                               decoder=decoder, rank="cuda")
     for run in range(runs):
-        input_data = torch.randn(1, 3, img_size, img_size)
-
+        input_data = torch.randn(1, 3, img_size, img_size).to("cuda")
+        
         t0 = time.perf_counter()
         with torch.no_grad():
             pred, _ = captioner(enc_x=input_data,
@@ -170,12 +170,12 @@ def main():
     parser.add_argument(
         "--encoder_load_path",
         type=str,
-        default="./pretrained_weights/dynamic_quantized_encoder_rf_model.pth",
+        default="./pretrained_weights/static_quantized_encoder_rf_model.pth",
     )
     parser.add_argument(
         "--decoder_load_path",
         type=str,
-        default="./pretrained_weights/dynamic_quantized_decoder_rf_model.pth",
+        default="./pretrained_weights/static_quantized_decoder_rf_model.pth",
     )
     parser.add_argument(
         "--image_paths",
@@ -284,7 +284,8 @@ def main():
     print("Encoder loaded ...")
     decoder_model.load_state_dict(torch.load(args.decoder_load_path))
     print("Decoder loaded ...")
-
+    encoder_model.to("cuda")
+    decoder_model.to("cuda")
     if args.compute_params:
         print("Computing Encoder Params")
         compute_parameters(encoder_model)

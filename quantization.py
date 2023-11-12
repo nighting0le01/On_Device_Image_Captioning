@@ -172,6 +172,9 @@ if __name__ == "__main__":
     parser.add_argument(
         "--static", type=str2bool, default=True
     )  # default='./github_ignore_material/saves/')
+    parser.add_argument(
+        "--qat", type=str2bool, default=False
+    )  # default='./github_ignore_material/saves/')
     parser.add_argument("--calibration_steps", type=int, default=1000)
     parser.add_argument("--static_qconfig", type=str, default="x86")
     parser.add_argument("--demo", type=str2bool, default=False)

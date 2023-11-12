@@ -41,7 +41,7 @@ def calibrate(model, data_loader, iters=30, device="cpu"):
             )
 
 
-def prepare_model(model_to_quantize, example_inputs, qconfig_mapping, device="cpu"):
+def prepare_model(model_to_quantize, example_inputs, qconfig_mapping, device="cpu", qat=False):
     model_to_quantize.eval()
     prepared_model = prepare_fx(model_to_quantize, qconfig_mapping, example_inputs)
     return prepared_model
@@ -85,11 +85,12 @@ def quantize_model(prepared_model, device="cpu"):
 
 
 def quantize_encoder_decoder(
-    encoder, decoder, data_loader, num_iters, qconfig_mapping, device="cpu", static=True
+    encoder, decoder, data_loader, num_iters, qconfig_mapping, device="cpu", static=True, 
+    qat=False
 ):
     example_inputs = list(data_loader.get_batch_samples(2, [0]))
-    prepared_encoder = prepare_model(encoder, example_inputs, qconfig_mapping, device)
-    prepared_decoder = prepare_model(decoder, example_inputs, qconfig_mapping, device)
+    prepared_encoder = prepare_model(encoder, example_inputs, qconfig_mapping, device, qat=qat)
+    prepared_decoder = prepare_model(decoder, example_inputs, qconfig_mapping, device, qat=qat)
     if static:
         calibrate_enc_dec(
             prepared_encoder, prepared_decoder, data_loader, num_iters, device

@@ -394,7 +394,6 @@ class E2E_ExpansionNet_Captioner(Captioner):
                 enc_input_num_pads,
                 dec_input,
                 dec_input_num_pads,
-                apply_log_softmax=True,
             )
 
             prob_dist = torch.distributions.Categorical(

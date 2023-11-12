@@ -275,6 +275,21 @@ class VizWizDataset(Dataset):
         tmp = language_utils.remove_punctuations(tmp)
         tokenized_caption = ["SOS"] + language_utils.tokenize(tmp)[0] + ["EOS"]
         return tokenized_caption
+    
+    
+    def get_all_images_captions(self, dataset_split):
+        all_image_references = []
+
+        if dataset_split == VizWizDataset.TestSet_ID:
+            dataset = self.test_list
+        elif dataset_split ==VizWizDataset.ValidationSet_ID:
+            dataset = self.val_list
+        else:
+            dataset = self.train_list
+
+        for img_idx in range(len(dataset)):
+            all_image_references.append(dataset[img_idx]["all_captions"])
+        return all_image_references
 
     def get_eos_token_idx(self):
         return self.caption_word2idx_dict["EOS"]
