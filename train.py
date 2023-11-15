@@ -10,6 +10,7 @@ import torch
 import torch.distributed as dist
 import torch.multiprocessing as mp
 import torch.optim as optim
+from torch.ao.quantization import QConfigMapping, get_default_qat_qconfig_mapping
 from torch.nn.parallel import DistributedDataParallel as DDP
 from data.coco_dataset import CocoDatasetKarpathy
 from data.coco_dataloader import CocoDataLoader
@@ -31,12 +32,14 @@ from utils.saving_utils import (
     save_last_checkpoint,
     partially_load_state_dict,
 )
-
+from models.End_ExpansionNet_v2 import E2E_ExpansionNet_Captioner
 torch.autograd.set_detect_anomaly(False)
 torch.set_num_threads(1)
 torch.set_num_interop_threads(1)
 import functools
-
+from utils.quantization_utils import prepare_model, quantize_model, filter_state_dict
+from quantization import encoder_modules, decoder_modules
+from quantization_eval import evaluate_quantized_model_on_set, compute_quantized_evaluation_loss
 print = functools.partial(print, flush=True)
 
 
@@ -84,9 +87,22 @@ def train(
     prev_print_iter = already_trained_steps
     num_iter = data_loader.get_num_batches() * train_args.num_epochs
     print(f"NUM ITER: {num_iter}")
+    sampling_search_kwargs = {
+                "sample_max_seq_len": train_args.scst_max_len,
+                "how_many_outputs": num_sampled_captions,
+                "sos_idx": dataset.get_sos_token_idx(),
+                "eos_idx": dataset.get_eos_token_idx(),
+            }
+    if train_args.quantized: 
+        ddp_encoder, ddp_decoder = ddp_model
+
     for it in range(already_trained_steps, num_iter):
         iter_timer_start = time()
-        ddp_model.train()
+        if train_args.quantized:
+            ddp_encoder.train()
+            ddp_decoder.train()
+        else: 
+            ddp_model.train()
 
         if not train_args.reinforce:
             (
@@ -107,18 +123,28 @@ def train(
             batch_input_x = batch_input_x.to(rank)
             batch_target_y = batch_target_y.to(rank)
             # create a list of sub-batches so tensors can be deleted right-away after being used
-            pred_logprobs = ddp_model(
-                enc_x=batch_input_x,
-                dec_x=batch_target_y[:, :-1],
-                enc_x_num_pads=batch_input_x_num_pads,
-                dec_x_num_pads=batch_target_y_num_pads,
-                apply_softmax=False,
-            )
+            if train_args.quantized:
+                cross_enc_out = ddp_encoder(
+                    enc_x=batch_input_x,
+                    dec_x=batch_target_y[:, :-1],
+                    enc_x_num_pads=batch_input_x_num_pads,
+                    dec_x_num_pads=batch_target_y_num_pads)
+                pred_logprobs = ddp_decoder(
+                        enc_x = cross_enc_out,
+                        dec_x=batch_target_y[:, :-1],
+                        enc_x_num_pads=batch_input_x_num_pads,
+                        dec_x_num_pads=batch_target_y_num_pads)
+            else: 
+                pred_logprobs = ddp_model(
+                    enc_x=batch_input_x,
+                    dec_x=batch_target_y[:, :-1],
+                    enc_x_num_pads=batch_input_x_num_pads,
+                    dec_x_num_pads=batch_target_y_num_pads,
+                )
 
             loss = loss_function(
                 pred_logprobs, batch_target_y[:, 1:], dataset.get_pad_token_idx()
             )
-
             running_loss += loss.item()
             loss.backward()
         else:  # rf mode
@@ -137,17 +163,16 @@ def train(
             )
 
             batch_input_x = batch_input_x.to(rank)
-            sampling_search_kwargs = {
-                "sample_max_seq_len": train_args.scst_max_len,
-                "how_many_outputs": num_sampled_captions,
-                "sos_idx": dataset.get_sos_token_idx(),
-                "eos_idx": dataset.get_eos_token_idx(),
-            }
-            all_images_pred_idx, all_images_logprob = ddp_model(
+            if train_args.quantized: 
+                captioner = E2E_ExpansionNet_Captioner(sampling_search_kwargs, split_encoder=True, encoder=ddp_encoder,
+                                               decoder=ddp_decoder, rank=rank, apply_log_softmax=True)
+            else: 
+                captioner = E2E_ExpansionNet_Captioner(sampling_search_kwargs, split_encoder=False, 
+                                                       model=ddp_model, rank=rank, apply_log_softmax=True)
+            all_images_pred_idx, all_images_logprob = captioner(
                 enc_x=batch_input_x,
                 enc_x_num_pads=batch_input_x_num_pads,
                 mode="sampling",
-                **sampling_search_kwargs,
             )
 
             all_images_pred_caption = [
@@ -249,9 +274,11 @@ def train(
             it + 1
         ) % train_args.eval_every_iter == 0:  # ((it + 1) % data_loader.get_num_batches() == 0) or
             if not train_args.reinforce:
-                compute_evaluation_loss(
+                if train_args.quantized: 
+                    compute_quantized_evaluation_loss(
                     loss_function,
-                    ddp_model,
+                    ddp_encoder,
+                    ddp_decoder,
                     dataset,
                     data_loader,
                     dataset.val_num_images,
@@ -260,25 +287,53 @@ def train(
                     rank=rank,
                     verbose=True,
                 )
+                else: 
+                    compute_evaluation_loss(
+                        loss_function,
+                        ddp_model,
+                        dataset,
+                        data_loader,
+                        dataset.val_num_images,
+                        sub_batch_size=train_args.eval_parallel_batch_size,
+                        dataset_split=dataset.ValidationSet_ID,
+                        rank=rank,
+                        verbose=True,
+                    )
 
             if rank == 0:
                 print("Evaluation on Validation Set")
-            evaluate_model_on_set(
-                ddp_model,
-                dataset.caption_idx2word_list,
-                dataset.get_sos_token_idx(),
-                dataset.get_eos_token_idx(),
-                dataset.val_num_images,
-                data_loader,
-                dataset.ValidationSet_ID,
-                max_len,
-                rank,
-                ddp_sync_port,
-                parallel_batches=train_args.eval_parallel_batch_size,
-                use_images_instead_of_features=train_args.is_end_to_end,
-                beam_sizes=train_args.eval_beam_sizes,
-                is_vizwiz=train_args.vizwiz,
-            )
+            if train_args.quantized: 
+                evaluate_quantized_model_on_set(
+                    ddp_encoder,
+                    ddp_decoder,
+                    dataset.caption_idx2word_list,
+                    dataset.get_sos_token_idx(),
+                    dataset.get_eos_token_idx(),
+                    dataset.val_num_images,
+                    data_loader,
+                    VizWizDataset.ValidationSet_ID,
+                    max_len,
+                    rank,
+                    batch_size=args.batch_size,
+                    beam_size=args.beam_size
+                )
+            else: 
+                evaluate_model_on_set(
+                    ddp_model,
+                    dataset.caption_idx2word_list,
+                    dataset.get_sos_token_idx(),
+                    dataset.get_eos_token_idx(),
+                    dataset.val_num_images,
+                    data_loader,
+                    dataset.ValidationSet_ID,
+                    max_len,
+                    rank,
+                    ddp_sync_port,
+                    parallel_batches=train_args.eval_parallel_batch_size,
+                    use_images_instead_of_features=train_args.is_end_to_end,
+                    beam_sizes=train_args.eval_beam_sizes,
+                    is_vizwiz=train_args.vizwiz,
+                )
             time_to_save = True
 
         # saving
@@ -380,40 +435,91 @@ def distributed_train(
 
     img_size = 288
     if train_args.is_end_to_end:
-        from models.End_ExpansionNet_v2 import End_ExpansionNet_v2
+        from models.End_ExpansionNet_v2 import End_ExpansionNet_v2, End_ExpansionNet_v2_Encoder, End_ExpansionNet_v2_Decoder
+        if train_args.quantized:
 
-        model = End_ExpansionNet_v2(
-            swin_img_size=img_size,
-            swin_patch_size=3,
-            swin_in_chans=3,
-            swin_embed_dim=192,
-            swin_depths=[2, 2, 18, 2],
-            swin_num_heads=[6, 12, 24, 48],
-            swin_window_size=12,
-            swin_mlp_ratio=4.0,
-            swin_qkv_bias=True,
-            swin_qk_scale=None,
-            swin_drop_rate=0.0,
-            swin_attn_drop_rate=0.0,
-            swin_drop_path_rate=0.1,
-            swin_norm_layer=torch.nn.LayerNorm,
-            swin_ape=False,
-            swin_patch_norm=True,
-            swin_use_checkpoint=False,
-            final_swin_dim=1536,
-            d_model=model_args.model_dim,
-            N_enc=model_args.N_enc,
-            N_dec=model_args.N_dec,
-            num_heads=8,
-            ff=2048,
-            num_exp_enc_list=[32, 64, 128, 256, 512],
-            num_exp_dec=16,
-            output_word2idx=dataset.caption_word2idx_dict,
-            output_idx2word=dataset.caption_idx2word_list,
-            max_seq_len=model_max_len,
-            drop_args=model_args.drop_args,
-            rank=rank,
-        )
+            encoder_model = End_ExpansionNet_v2_Encoder(
+                swin_img_size=args.img_size,
+                swin_patch_size=4,
+                swin_in_chans=3,
+                swin_embed_dim=192,
+                swin_depths=[2, 2, 18, 2],
+                swin_num_heads=[6, 12, 24, 48],
+                swin_window_size=12,
+                swin_mlp_ratio=4.0,
+                swin_qkv_bias=True,
+                swin_qk_scale=None,
+                swin_drop_rate=0.0,
+                swin_attn_drop_rate=0.0,
+                swin_drop_path_rate=0.1,
+                swin_norm_layer=torch.nn.LayerNorm,
+                swin_ape=False,
+                swin_patch_norm=True,
+                swin_use_checkpoint=False,
+                final_swin_dim=1536,
+                d_model=model_args.model_dim,
+                N_enc=model_args.N_enc,
+                N_dec=model_args.N_dec,
+                num_heads=8,
+                ff=2048,
+                num_exp_enc_list=[32, 64, 128, 256, 512],
+                num_exp_dec=16,
+                output_word2idx=dataset.caption_word2idx_dict,
+                output_idx2word=dataset.caption_idx2word_list,
+                max_seq_len=args.max_seq_len,
+                drop_args=model_args.drop_args,
+                rank="cpu",
+            )
+
+            decoder_model = End_ExpansionNet_v2_Decoder(
+                d_model=512,
+                N_enc=3,
+                N_dec=3,
+                num_heads=8,
+                ff=2048,
+                num_exp_enc_list=[32, 64, 128, 256, 512],
+                num_exp_dec=16,
+                output_word2idx=dataset.caption_word2idx_dict,
+                output_idx2word=dataset.caption_idx2word_list,
+                max_seq_len=args.max_seq_len,
+                drop_args=model_args.drop_args,
+                rank="cpu",
+            )
+        else: 
+            model = End_ExpansionNet_v2(
+                swin_img_size=img_size,
+                swin_patch_size=3,
+                swin_in_chans=3,
+                swin_embed_dim=192,
+                swin_depths=[2, 2, 18, 2],
+                swin_num_heads=[6, 12, 24, 48],
+                swin_window_size=12,
+                swin_mlp_ratio=4.0,
+                swin_qkv_bias=True,
+                swin_qk_scale=None,
+                swin_drop_rate=0.0,
+                swin_attn_drop_rate=0.0,
+                swin_drop_path_rate=0.1,
+                swin_norm_layer=torch.nn.LayerNorm,
+                swin_ape=False,
+                swin_patch_norm=True,
+                swin_use_checkpoint=False,
+                final_swin_dim=1536,
+                d_model=model_args.model_dim,
+                N_enc=model_args.N_enc,
+                N_dec=model_args.N_dec,
+                num_heads=8,
+                ff=2048,
+                num_exp_enc_list=[32, 64, 128, 256, 512],
+                num_exp_dec=16,
+                output_word2idx=dataset.caption_word2idx_dict,
+                output_idx2word=dataset.caption_idx2word_list,
+                max_seq_len=model_max_len,
+                drop_args=model_args.drop_args,
+                rank=rank,
+                apply_log_softmax=train_args.reinforce 
+            )
+
     else:
         from models.ExpansionNet_v2 import ExpansionNet_v2
 
@@ -432,35 +538,93 @@ def distributed_train(
             img_feature_dim=1536,
             rank=rank,
         )
+    if train_args.quantized: 
+        if train_args.quantization_type == "static":
+            static_qconfig_str = "x86"
+            qconfig_mapping = get_default_qat_qconfig_mapping(static_qconfig_str)
+        else:
+            qconfig_mapping = QConfigMapping().set_global(torch.ao.quantization.default_dynamic_qconfig)
+        
+        example_input = (
+            torch.randn(1, 3, args.img_size, args.img_size), 
+            torch.randint(1, 100, (1, 15)),
+            [0],
+            [0]
+        )
+        #TODO: Loading and Preparing Logic (look at quantization.py)
+        if train_args.quantized_checkpoint:
+            print("Checkpoint already prepared for quantization...")
+            encoder_model.load_state_dict(torch.load(path_args.encoder_load_path))
+            print("Encoder loaded ...")
+            decoder_model.load_state_dict(torch.load(path_args.decoder_load_path))
+            print("Decoder loaded ...")
+        else: 
+            print("Loading encoder / decoder from unprepared full model")
+            state_dict = torch.load(path_args.pretrain_checkpoint)["model_state_dict"]
+            encoder_state_dict = filter_state_dict(state_dict, encoder_modules)
+            decoder_state_dict = filter_state_dict(state_dict, decoder_modules)
 
-    checkpoint = torch.load(path_args.pretrain_checkpoint)
-    if model_args.param_config == 0:
-        load_base_state_dict(model, checkpoint["model_state_dict"])
-        print("Baseline Model loaded ...")
+            encoder_model.load_state_dict(encoder_state_dict)
+            print("Encoder loaded ...")
 
-    elif model_args.param_config == 1:
-        load_state_dict_filtered(model, checkpoint, "enc")
-        print(" Model with 2 Encoder Layers loaded ...")
+            decoder_model.load_state_dict(decoder_state_dict)
+            print("Decoder loaded ...")
+            print("Preparing Encoder and Decoder Model")
+            encoder_model= prepare_model(encoder_model, example_input, qconfig_mapping)
+            print("Encoder prepared ...")
+            decoder_model = prepare_model(decoder_model, example_input, qconfig_mapping)
+            print("Decoder prepared ...")
 
-    elif model_args.param_config == 2:
-        load_state_dict_filtered(model, checkpoint, "dec")
-        print(" Model with 2 Encoder & 2 Decoder Layers  loaded ...")
 
-    model.to(rank)
-    ddp_model = DDP(model, device_ids=[rank])
+
+    else: 
+        checkpoint = torch.load(path_args.pretrain_checkpoint)
+        if model_args.param_config == 0:
+            load_base_state_dict(model, checkpoint["model_state_dict"])
+            print("Baseline Model loaded ...")
+
+        elif model_args.param_config == 1:
+            load_state_dict_filtered(model, checkpoint, "enc")
+            print(" Model with 2 Encoder Layers loaded ...")
+
+        elif model_args.param_config == 2:
+            load_state_dict_filtered(model, checkpoint, "dec")
+            print(" Model with 2 Encoder & 2 Decoder Layers  loaded ...")
+    if train_args.quantized: 
+        encoder_model.to(rank)
+        decoder_model.to(rank)
+        ddp_model = (DDP(encoder_model, device_ids=[rank]), DDP(decoder_model, device_ids=[rank]))
+    else: 
+        model.to(rank)
+        ddp_model = DDP(model, device_ids=[rank])
     if train_args.vizwiz:
         print("VizWiz Dataloader in use")
-        data_loader = VizWizDataLoader(
-            vizwiz_dataset=dataset,
-            batch_size=train_args.batch_size,
-            num_procs=world_size,
-            array_of_init_seeds=array_of_init_seeds,
-            dataloader_mode="caption_wise",
-            resize_image_size=img_size if train_args.is_end_to_end else None,
-            rank=rank,
-            image_folder=path_args.image_folder,
-            verbose=True,
-        )
+        if train_args.reinforce:
+            print("Reinforcement learning Mode")
+            data_loader = VizWizDataLoader(
+                vizwiz_dataset=dataset,
+                batch_size=train_args.batch_size,
+                num_procs=world_size,
+                array_of_init_seeds=array_of_init_seeds,
+                dataloader_mode="image_wise",
+                resize_image_size=img_size if train_args.is_end_to_end else None,
+                rank=rank,
+                image_folder=path_args.image_folder,
+                verbose=True,
+            )
+        else: 
+            print("Cross Entropy Learning Mode")
+            data_loader = VizWizDataLoader(
+                vizwiz_dataset=dataset,
+                batch_size=train_args.batch_size,
+                num_procs=world_size,
+                array_of_init_seeds=array_of_init_seeds,
+                dataloader_mode="caption_wise",
+                resize_image_size=img_size if train_args.is_end_to_end else None,
+                rank=rank,
+                image_folder=path_args.image_folder,
+                verbose=True,
+            )
     else:
         if train_args.reinforce:
             print("Reinforcement learning Mode")
@@ -671,7 +835,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--save_path",
         type=str,
-        default="/home/arpitsah/Desktop/Fall-2023/odml/On_Device_Image_Captioning/pretrained_weights/288_size_base/",
+        default="./pretrained_weights/",
     )  # default='./github_ignore_material/saves/')
     parser.add_argument("--save_every_minutes", type=int, default=25)
     parser.add_argument("--how_many_checkpoints", type=int, default=1)
@@ -683,6 +847,10 @@ if __name__ == "__main__":
 
     parser.add_argument("--reinforce", type=str2bool, default=False)
     parser.add_argument("--vizwiz", type=str2bool, default=True)
+    parser.add_argument("--quantized", type=str2bool, default=False)
+    parser.add_argument("--quantization_type", type=str, default="static")
+    parser.add_argument("--quantized_checkpoint", type=str2bool, default=False)
+
     parser.add_argument("--scst_max_len", type=int, default=20)
     parser.add_argument("--num_epochs", type=int, default=5)
 
@@ -712,7 +880,17 @@ if __name__ == "__main__":
     parser.add_argument(
         "--pretrain_checkpoint",
         type=str,
-        default="/home/arpitsah/Desktop/Fall-2023/odml/On_Device_Image_Captioning/pretrained_weights/rf_model.pth",
+        default="./pretrained_weights/rf_model.pth",
+    )
+    parser.add_argument(
+        "--encoder_load_path",
+        type=str,
+        default="./pretrained_weights/static_quantized_encoder_rf_model.pth",
+    )
+    parser.add_argument(
+        "--decoder_load_path",
+        type=str,
+        default="./pretrained_weights/static_quantized_decoder_rf_model.pth",
     )
 
     parser.add_argument("--seed", type=int, default=1234)
@@ -777,6 +955,8 @@ if __name__ == "__main__":
         body_save_path=args.body_save_path,
         preproc_images_hdf5_filepath=args.preproc_images_hdf5_filepath,
         pretrain_checkpoint=args.pretrain_checkpoint,
+        encoder_load_path=args.encoder_load_path,
+        decoder_load_path=args.decoder_load_path
     )
 
     train_args = Namespace(
@@ -796,6 +976,9 @@ if __name__ == "__main__":
         partial_load=args.partial_load,
         scst_max_len=args.scst_max_len,
         vizwiz=args.vizwiz,
+        quantized=args.quantized,
+        quantization_type=args.quantization_type,
+        quantized_checkpoint=args.quantized_checkpoint
     )
 
     print("train batch_size: " + str(args.batch_size))
@@ -816,7 +999,7 @@ if __name__ == "__main__":
             split,
             train=True,
             coco_vocab_dict=coco_vocab_idx_dict,
-            vizwiz_annotations_dir="/home/arpitsah/Desktop/Fall-2023/odml/vizWiz/annotations",
+            vizwiz_annotations_dir=f"{path_args.image_folder}/annotations",
         )
     else:
         dataset = CocoDatasetKarpathy(

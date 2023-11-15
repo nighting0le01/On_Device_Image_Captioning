@@ -46,6 +46,7 @@ class Captioner:
         apply_log_softmax=False,
         encoder=None,
         decoder=None,
+        train=False
     ):
         self.rank = None
         self.split_encoder = split_encoder
@@ -63,6 +64,7 @@ class Captioner:
         self.beam_search_args = beam_search_args
         self.apply_log_softmax = apply_log_softmax
         self.log_softmax = nn.LogSoftmax(dim=-1)
+        self.train = train
 
     def __call__(
         self,

@@ -20,6 +20,81 @@ from torch.ao.quantization.quantize_fx import prepare_fx, convert_fx
 from torch.ao.quantization import get_default_qconfig_mapping, QConfigMapping
 import os
 
+
+def compute_quantized_evaluation_loss(
+    loss_function,
+    encoder,
+    decoder,
+    data_set,
+    data_loader,
+    num_samples,
+    sub_batch_size,
+    dataset_split,
+    rank=0,
+    verbose=False,
+):
+    encoder.eval()
+    decoder.eval()
+
+    sb_size = sub_batch_size
+
+    tot_loss = 0
+    num_sub_batch = math.ceil(num_samples / sb_size)
+    tot_num_tokens = 0
+    for sb_it in range(num_sub_batch):
+        from_idx = sb_it * sb_size
+        to_idx = min((sb_it + 1) * sb_size, num_samples)
+
+        (
+            sub_batch_input_x,
+            sub_batch_target_y,
+            sub_batch_input_x_num_pads,
+            sub_batch_target_y_num_pads,
+        ) = data_loader.get_batch_samples(
+            img_idx_batch_list=list(range(from_idx, to_idx)),
+            dataset_split=dataset_split,
+        )
+        sub_batch_input_x = sub_batch_input_x.to(rank)
+        sub_batch_target_y = sub_batch_target_y.to(rank)
+
+        sub_batch_input_x = sub_batch_input_x
+        sub_batch_target_y = sub_batch_target_y
+        tot_num_tokens += sub_batch_target_y.size(1) * sub_batch_target_y.size(0) - sum(
+            sub_batch_target_y_num_pads
+        )
+        encoder.apply_softmax = False
+        decoder.apply_softmax = False
+        cross_enc_out = encoder(enc_x=sub_batch_input_x,
+            dec_x=sub_batch_target_y[:, :-1],
+            enc_x_num_pads=sub_batch_input_x_num_pads,
+            dec_x_num_pads=sub_batch_target_y_num_pads,
+
+        )
+        pred = decoder(
+            enc_x=sub_batch_input_x,
+            dec_x=sub_batch_target_y[:, :-1],
+            enc_x_num_pads=sub_batch_input_x_num_pads,
+            dec_x_num_pads=sub_batch_target_y_num_pads,
+
+        )
+        encoder.apply_softmax = True
+        decoder.apply_softmax = True
+        tot_loss += loss_function(
+            pred,
+            sub_batch_target_y[:, 1:],
+            data_set.get_pad_token_idx(),
+            divide_by_non_zeros=False,
+        ).item()
+        del sub_batch_input_x, sub_batch_target_y, pred
+        torch.cuda.empty_cache()
+    tot_loss /= tot_num_tokens
+    if verbose and rank == 0:
+        print("Validation Loss on " + str(num_samples) + " samples: " + str(tot_loss))
+
+    return tot_loss
+
+
+
 def evaluate_quantized_model(
     encoder, 
     decoder,
@@ -110,7 +185,8 @@ def evaluate_quantized_model(
                 )  # remove EOS and SOS
             # print(sub_list_predictions[-1], validate_y[-1])
             del sub_batch_x, sub_batch_x_num_pads, output_words
-
+    encoder.train()
+    decoder.train()
     if (rank == 0 or rank == "cpu") and verbose:
         # dirty code to leave the evaluation code untouched
         list_predictions = [sub_predictions for sub_predictions in sub_list_predictions]

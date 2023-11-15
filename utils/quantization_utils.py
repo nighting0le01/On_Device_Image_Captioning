@@ -2,7 +2,7 @@ import torch
 import os
 from tqdm import tqdm
 from torch.ao.quantization import get_default_qconfig
-from torch.ao.quantization.quantize_fx import prepare_fx, convert_fx
+from torch.ao.quantization.quantize_fx import prepare_fx, convert_fx, prepare_qat_fx
 from torch.ao.quantization import get_default_qconfig_mapping
 
 
@@ -43,7 +43,10 @@ def calibrate(model, data_loader, iters=30, device="cpu"):
 
 def prepare_model(model_to_quantize, example_inputs, qconfig_mapping, device="cpu", qat=False):
     model_to_quantize.eval()
-    prepared_model = prepare_fx(model_to_quantize, qconfig_mapping, example_inputs)
+    if qat: 
+        prepared_model = prepare_qat_fx(model_to_quantize, qconfig_mapping, example_inputs)
+    else: 
+        prepared_model = prepare_fx(model_to_quantize, qconfig_mapping, example_inputs)
     return prepared_model
 
 
@@ -89,6 +92,7 @@ def quantize_encoder_decoder(
     qat=False
 ):
     example_inputs = list(data_loader.get_batch_samples(2, [0]))
+
     prepared_encoder = prepare_model(encoder, example_inputs, qconfig_mapping, device, qat=qat)
     prepared_decoder = prepare_model(decoder, example_inputs, qconfig_mapping, device, qat=qat)
     if static:

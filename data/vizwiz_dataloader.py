@@ -61,11 +61,11 @@ class VizWizDataLoader(TransparentDataLoader):
         self.num_procs = num_procs
         self.num_batches = VizWizDataLoader.NOT_DEFINED
         self.batch_it = []
-        self.image_file_x = []
+        self.image_idx_x = []
         self.caption_y = []
         for idx_proc in range(num_procs):
             self.batch_it.append(0)
-            self.image_file_x.append([])
+            self.image_idx_x.append([])
             self.caption_y.append([])
 
         preprocess_layers_1 = [
@@ -95,11 +95,11 @@ class VizWizDataLoader(TransparentDataLoader):
             random.shuffle(self.dataset.test_list)
 
         self.batch_it = []
-        self.image_file_x = []
+        self.image_idx_x = []
         self.caption_y = []
         for idx_proc in range(self.num_procs):
             self.batch_it.append(0)
-            self.image_file_x.append([])
+            self.image_idx_x.append([])
             self.caption_y.append([])
 
         tailing_elements = len(self.dataset) % (batch_size * self.num_procs)
@@ -114,33 +114,34 @@ class VizWizDataLoader(TransparentDataLoader):
                 self.dataset.test_list = self.dataset.test_list[:-tailing_elements]
                 self.dataset.test_num_images = len(self.dataset.test_list)
 
-        image_file_batch = []
+        image_idx_batch = []
         caption_y_batch = []
         for idx_proc in range(self.num_procs):
-            image_file_batch.append([])
+            image_idx_batch.append([])
             caption_y_batch.append([])
         i = 0
 
         while i < len(self.dataset):
             for idx_proc in range(self.num_procs):
-                img_file, caption = (
-                    self.dataset[i]["image_path"],
-                    self.dataset[i]["tokenized_caption"],
-                )
-                image_file_batch[idx_proc].append(img_file)
-                preprocessed_caption = self.preprocess(caption)
-                caption_y_batch[idx_proc].append(preprocessed_caption)
+                img_idx = i
+                if self.dataloader_mode == "caption_wise":
+                    caption = self.dataset[i]["tokenized_caption"]
+                    caption = self.preprocess(caption)
+                else: 
+                    caption = self.dataset[i]["all_captions"]
+                image_idx_batch[idx_proc].append(img_idx)
+                caption_y_batch[idx_proc].append(caption)
                 i += 1
             if i % batch_size == 0:
                 for idx_proc in range(self.num_procs):
-                    self.image_file_x[idx_proc].append(image_file_batch[idx_proc])
+                    self.image_idx_x[idx_proc].append(image_idx_batch[idx_proc])
                     self.caption_y[idx_proc].append(caption_y_batch[idx_proc])
-                    image_file_batch[idx_proc] = []
+                    image_idx_batch[idx_proc] = []
                     caption_y_batch[idx_proc] = []
-        self.num_batches = len(self.image_file_x[0])
+        self.num_batches = len(self.image_idx_x[0])
 
     def get_next_batch(
-        self, verbose=False, get_also_image_path=False, get_also_image_idxes=False
+        self, verbose=False, get_also_image_idxes=False
     ):
         if self.batch_it[self.rank] >= self.num_batches:
             if verbose:
@@ -152,31 +153,37 @@ class VizWizDataLoader(TransparentDataLoader):
                 )
 
             self.init_epoch(epoch_it=self.epoch_it, verbose=verbose)
-        img_file_batch = self.image_file_x[self.rank][self.batch_it[self.rank]]
-        batch_x, batch_x_num_pads = self.get_padded_img_batch(img_file_batch)
+        image_idx_batch = self.image_idx_x[self.rank][self.batch_it[self.rank]]
+        batch_x, batch_x_num_pads = self.get_padded_img_batch(image_idx_batch)
 
         caption_str_batch = copy.copy(
             self.caption_y[self.rank][self.batch_it[self.rank]]
         )
-        caption_encoded_batch = language_utils.convert_allsentences_word2idx(
-            caption_str_batch, self.dataset.caption_word2idx_dict
-        )
-        batch_y, batch_y_num_pads = self.add_pad_according_to_batch(
-            caption_encoded_batch, self.dataset.caption_word2idx_dict["PAD"]
-        )
-        batch_y = torch.tensor(batch_y)
+        if self.dataloader_mode == "caption_wise": 
+            caption_encoded_batch = language_utils.convert_allsentences_word2idx(
+                caption_str_batch, self.dataset.caption_word2idx_dict
+            )
+            batch_y, batch_y_num_pads = self.add_pad_according_to_batch(
+                caption_encoded_batch, self.dataset.caption_word2idx_dict["PAD"]
+            )
+            batch_y = torch.tensor(batch_y)
+        else: 
+            batch_y = caption_str_batch
 
         if verbose:
             mean_src_len = "Constant"
-            mean_trg_len = int(
-                sum(
-                    [
-                        (len(batch_y[i]) - batch_y_num_pads[i])
-                        for i in range(len(batch_y))
-                    ]
+            if self.dataloader_mode == "caption_wise":
+                mean_trg_len = int(
+                    sum(
+                        [
+                            (len(batch_y[i]) - batch_y_num_pads[i])
+                            for i in range(len(batch_y))
+                        ]
+                    )
+                    / len(batch_y)
                 )
-                / len(batch_y)
-            )
+            else: 
+                mean_trg_len = "variable"
             print(
                 str(self.rank)
                 + "] "
@@ -196,17 +203,21 @@ class VizWizDataLoader(TransparentDataLoader):
             )
 
         self.batch_it[self.rank] += 1
-        idxes = [] * len(img_file_batch)
-        if get_also_image_path:
-            return batch_x, batch_y, batch_x_num_pads, batch_y_num_pads, img_file_batch
-        elif get_also_image_idxes:
-            return batch_x, batch_y, batch_x_num_pads, batch_y_num_pads, idxes
+        
+        if self.dataloader_mode == "caption_wise":
+            if get_also_image_idxes: 
+                return batch_x, batch_y, batch_x_num_pads, batch_y_num_pads, image_idx_batch
+            else:
+                return batch_x, batch_y, batch_x_num_pads, batch_y_num_pads
         else:
-            return batch_x, batch_y, batch_x_num_pads, batch_y_num_pads
+            if get_also_image_idxes: 
+                return batch_x, batch_y, batch_x_num_pads, image_idx_batch
+            else: 
+                return batch_x,  batch_y, batch_x_num_pads
+
 
     def get_batch_samples(self, dataset_split, img_idx_batch_list):
         batch_captions_y = []
-        img_batch = []
         idx_list = img_idx_batch_list
         for i in range(len(idx_list)):
             idx = idx_list[i]
@@ -219,14 +230,8 @@ class VizWizDataLoader(TransparentDataLoader):
             if dataset_split != VizWizDataset.TestSet_ID:
                 batch_captions_y.append(preprocessed_caption)
 
-            if dataset_split == VizWizDataset.TestSet_ID:
-                img_batch.append(self.dataset.test_list[idx]["image_path"])
-            elif dataset_split == VizWizDataset.ValidationSet_ID:
-                img_batch.append(self.dataset.val_list[idx]["image_path"])
-            else:
-                img_batch.append(self.dataset.train_list[idx]["image_path"])
-
-        batch_x, batch_x_num_pads = self.get_padded_img_batch(img_batch)
+        self.dataset.current_split = dataset_split
+        batch_x, batch_x_num_pads = self.get_padded_img_batch(img_idxes=img_idx_batch_list)
 
         if dataset_split != VizWizDataset.TestSet_ID:
             batch_caption_y_encoded = language_utils.convert_allsentences_word2idx(
@@ -236,18 +241,20 @@ class VizWizDataLoader(TransparentDataLoader):
                 batch_caption_y_encoded, self.dataset.get_pad_token_idx()
             )
         batch_y = torch.tensor(batch_y)
-        if dataset_split == VizWizDataset.TestSet_ID or self.dataloader_mode != "caption_wise":
+        if dataset_split == VizWizDataset.TestSet_ID:
             return batch_x, batch_x_num_pads
         else:
             return batch_x, batch_y, batch_x_num_pads, batch_y_num_pads
 
-    def get_padded_img_batch(self, img_files):
+    def get_padded_img_batch(self, img_idxes):
         image_tensors = []
         if self.dataset.current_split == VizWizDataset.ValidationSet_ID:
             subfolder = "val"
         else:
             subfolder = "train"
-        for image_file in img_files:
+
+        for image_idx in img_idxes:
+            image_file = self.dataset[image_idx]["image_path"]
             full_image_path = os.path.join(self.image_folder, subfolder, image_file)
             pil_image = PIL_Image.open(full_image_path)
             if pil_image.mode != "RGB":

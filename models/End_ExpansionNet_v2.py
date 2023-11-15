@@ -131,10 +131,9 @@ class End_ExpansionNet_v2(CaptioningModel):
             .to(dtype=torch.float32)
             .unsqueeze(0)
             .repeat_interleave(enc_input.size(0), dim=0)
-            .to(self.rank)
         )
         pad_mask = create_pad_mask(
-            mask_size=(enc_input.size(0), max_num_enc, enc_input.size(0)),
+            mask_size=(enc_input.size(0), max_num_enc, enc_input.size(1)),
             pad_row=[0] * enc_input.size(0),
             pad_column=enc_input_num_pads,
             rank=self.rank,
@@ -176,7 +175,6 @@ class End_ExpansionNet_v2(CaptioningModel):
             .to(dtype=torch.float32)
             .unsqueeze(0)
             .repeat_interleave(dec_input.size(0), dim=0)
-            .to(self.rank)
         )
         range_dec = (
             torch.tensor([1.0])
@@ -317,6 +315,7 @@ class E2E_ExpansionNet_Captioner(Captioner):
         apply_log_softmax=False,
         encoder=None,
         decoder=None,
+        train=False,
         rank=0,
         N_enc=3,
         N_dec=3,
@@ -324,7 +323,7 @@ class E2E_ExpansionNet_Captioner(Captioner):
         num_exp_enc_list=[32, 64, 128, 256, 512],
     ):
         super().__init__(
-            beam_search_args, model, split_encoder, apply_log_softmax, encoder, decoder
+            beam_search_args, model, split_encoder, apply_log_softmax, encoder, decoder, train
         )
         self.rank = rank
         self.N_enc = N_enc
@@ -336,6 +335,9 @@ class E2E_ExpansionNet_Captioner(Captioner):
         if self.split_encoder:
             return self.encoder(enc_input, enc_input_num_pads)
         else:
+            if self.train: 
+                return self.model.module.forward_enc(enc_input, enc_input_num_pads)
+    
             return self.model.forward_enc(enc_input, enc_input_num_pads)
 
     def forward_dec(
@@ -349,6 +351,11 @@ class E2E_ExpansionNet_Captioner(Captioner):
                 y = self.log_softmax(y)
             return y
         else:
+            if self.train: 
+                return self.model.module.forward_dec(
+                    cross_input, enc_input_num_pads, dec_input, dec_input_num_pads
+                )
+
             return self.model.forward_dec(
                 cross_input, enc_input_num_pads, dec_input, dec_input_num_pads
             )
@@ -564,7 +571,7 @@ class End_ExpansionNet_v2_Encoder(CaptioningModel):
             .repeat_interleave(enc_input.size(0), dim=0)
         )
         pad_mask = create_pad_mask(
-            mask_size=(enc_input.size(0), max_num_enc, enc_input.size(0)),
+            mask_size=(enc_input.size(0), max_num_enc, enc_input.size(1)),
             pad_row=[0] * enc_input.size(0),
             pad_column=enc_input_num_pads,
             rank=self.rank,

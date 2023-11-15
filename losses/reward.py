@@ -85,5 +85,6 @@ class ReinforceCiderReward:
             )
 
         reward_loss = (reward - reward_base) * torch.sum(-all_images_logprob, dim=-1)
+
         reward_loss = reward_loss.mean()
         return reward_loss, reward, reward_base
