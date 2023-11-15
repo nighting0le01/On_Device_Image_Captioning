@@ -15,7 +15,7 @@ from torch.ao.quantization import get_default_qconfig
 from torch.ao.quantization.quantize_fx import prepare_fx, convert_fx
 from torch.ao.quantization import get_default_qconfig_mapping, QConfigMapping
 
-sys.path.append("/usr0/home/nvaikunt/On_Device_Image_Captioning")
+sys.path.append("/home/arpitsah/Desktop/Fall-2023/odml/On_Device_Image_Captioning")
 from models.End_ExpansionNet_v2 import End_ExpansionNet_v2, End_ExpansionNet_v2_Encoder, End_ExpansionNet_v2_Decoder, E2E_ExpansionNet_Captioner
 
 from utils.image_utils import preprocess_image
@@ -140,7 +140,7 @@ def main():
     parser.add_argument(
         "--compute_inference_time",
         action="store_true",
-        default=False,
+        default=True,
         help="To compute_train_time",
     )
     parser.add_argument(
@@ -149,7 +149,7 @@ def main():
     parser.add_argument(
         "--compute_params",
         action="store_true",
-        default=True,
+        default=False,
         help="To Compute parameters",
     )
     parser.add_argument(
@@ -207,7 +207,7 @@ def main():
     )
 
     with open(
-        "./demo_material/demo_coco_tokens.pickle", "rb"
+        "odml/On_Device_Image_Captioning/demo_material/demo_coco_tokens.pickle", "rb"
     ) as f:
         coco_tokens = pickle.load(f)
         sos_idx = coco_tokens["word2idx_dict"][coco_tokens["sos_str"]]
@@ -280,10 +280,10 @@ def main():
     prepared_decoder = prepare_model(decoder_model, example_input, qconfig_mapping)
     encoder_model = quantize_model(prepared_encoder)
     decoder_model = quantize_model(prepared_decoder)
-    encoder_model.load_state_dict(torch.load(args.encoder_load_path))
-    print("Encoder loaded ...")
-    decoder_model.load_state_dict(torch.load(args.decoder_load_path))
-    print("Decoder loaded ...")
+    # encoder_model.load_state_dict(torch.load(args.encoder_load_path))
+    # print("Encoder loaded ...")
+    # decoder_model.load_state_dict(torch.load(args.decoder_load_path))
+    # print("Decoder loaded ...")
     encoder_model.to("cuda")
     decoder_model.to("cuda")
     if args.compute_params:

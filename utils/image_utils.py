@@ -21,3 +21,8 @@ def preprocess_image(image_path, img_size):
     image = torchvision.transforms.ToTensor()(preprocess_pil_image)
     image = transf_2(image)
     return image.unsqueeze(0)
+
+if __name__ =="__main__":
+    pass
+    
+    
