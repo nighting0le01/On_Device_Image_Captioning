@@ -1,3 +1,4 @@
+import os
 import time
 import matplotlib.pyplot as plt
 import pandas as pd
@@ -9,8 +10,9 @@ import pickle
 import cv2
 from argparse import Namespace
 import sys
-
-sys.path.append("/home/arpitsah/Desktop/Fall-2023/odml/On_Device_Image_Captioning")
+from copy import deepcopy
+import torch.nn.utils.prune as prune
+sys.path.append("On_Device_Image_Captioning")
 from models.End_ExpansionNet_v2 import End_ExpansionNet_v2
 from utils.image_utils import preprocess_image
 from utils.language_utils import tokens2description
@@ -118,6 +120,35 @@ def compute_inference_Latency(
     plt.savefig(f"{plots_path}/inference_latency.png")
     plt.show()
 
+def calculate_sparsity(buffer):
+    total_zeros = 0
+    total_params = 0
+    for x,y in buffer:
+        curr_zeros = float(torch.sum(y == 0))
+        curr_params = torch.flatten(y).shape[0]
+        total_zeros += curr_zeros
+        total_params += curr_params
+        sp = (curr_zeros/curr_params)*100
+        print(f"Sparsity in {x} is {sp:.2f}%")
+    print(f"Overall Sparsity of the pruned parameters is {(total_zeros/total_params)*100:.2f}%")
+
+def calculate_pruned_size(model, checkpoint_name, weight_names):
+    for i in range(0, len(weight_names)):
+        prune.remove(weight_names[i][0], 'weight')
+    sd = model.state_dict()
+    for item in sd:
+        sd[item] = model.state_dict()[item].to_sparse()
+    torch.save(sd, f"On_Device_Image_Captioning/pruned_weights/{checkpoint_name}.pth")
+    print(f'Size of the pruned model: {os.path.getsize(f"On_Device_Image_Captioning/pruned_weights/{checkpoint_name}.pth")/1e6} MB')
+
+def prune_model(model, n_prune, checkpoint_name):
+    c_model = deepcopy(model)
+    weight_names = [(m[1], "weight") for m in c_model.named_modules() if len(list(m[1].children()))==0 and not isinstance(m[1], (nn.Dropout, nn.Sigmoid, nn.GELU, nn.Identity, nn.Softmax, nn.LogSoftmax))]
+    for _ in range(n_prune):
+        prune.global_unstructured(weight_names, pruning_method=prune.L1Unstructured, amount=0.33)
+    buffer = list(c_model.named_buffers())
+    calculate_sparsity(buffer)
+    calculate_pruned_size(c_model, checkpoint_name, weight_names)
 
 def main():
     parser = argparse.ArgumentParser("ExpansionNet Benchmarking")
@@ -149,6 +180,24 @@ def main():
         help="To Compute parameters",
     )
     parser.add_argument(
+        '--prune',
+        action='store_true',
+        default=False,
+        help='To Prune the model'
+    )
+    parser.add_argument(
+        '--prune_count',
+        type=int,
+        default=1,
+        help='No. of times to prune the model'
+    )
+    parser.add_argument(
+        '--load_pruned_model',
+        action='store_true',
+        default=False,
+        help='To load the sparsed pruned weights in the model'
+    )
+    parser.add_argument(
         "--img_size", type=int, default=384, help=" Image size for Swin Transformer"
     )
     parser.add_argument("--seed", type=int, default=42, help="random seed ")
@@ -166,7 +215,7 @@ def main():
     parser.add_argument(
         "--load_path",
         type=str,
-        default="On_Device_Image_Captioning/pretrained_weights/rf_model.pth",
+        default="On_Device_Image_Captioning/pretrained_weights/base/4_th.pth",
     )
     parser.add_argument(
         "--image_paths",
@@ -238,9 +287,18 @@ def main():
         rank=args.device,
     )
 
-    checkpoint = torch.load(args.load_path)
-    model.load_state_dict(checkpoint["model_state_dict"])
-    print("Model loaded ...")
+    if args.load_pruned_model:
+        sparse_checkpoint = torch.load(args.load_path)
+        model.load_state_dict({k:(v if v.layout == torch.strided else v.to_dense()) for k,v in sparse_checkpoint.items()})
+        print("Model loaded with pruned weights ...")
+    else:
+        checkpoint = torch.load(args.load_path)
+        model.load_state_dict(checkpoint["model_state_dict"])
+        print("Model loaded ...")
+
+    if args.prune:
+        print("Pruning")
+        prune_model(model, args.prune_count, f"prune_{args.prune_count}")
 
     if args.compute_params:
         print("Computing params")

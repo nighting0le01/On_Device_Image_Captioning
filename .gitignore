@@ -165,8 +165,6 @@ coco_annotations/
 vizWiz_Weights/
 github_ignore_material/
 pretrained_weightscheckpoint*
-benchmarking/plots/q7i.jpg
 .gitignore
-benchmarking/plots/q7ii.jpg
-benchmarking/plots/q9.jpg
-benchmarking/plots/q11.jpg
+benchmarking/plots/
+pruned_weights
