@@ -153,7 +153,7 @@ def evaluate_model(
     dataset_split=CocoDatasetKarpathy.TrainSet_ID,
     use_images_instead_of_features=False,
     verbose=True,
-    stanford_model_path="./eval/get_stanford_models.sh",
+    stanford_model_path="On_Device_Image_Captioning/eval/get_stanford_models.sh",
 ):
     start_time = time()
 
@@ -288,7 +288,7 @@ def evaluate_model_on_set(
     ddp_sync_port,
     parallel_batches=16,
     beam_sizes=[1],
-    stanford_model_path="./eval/get_stanford_models.sh",
+    stanford_model_path="On_Device_Image_Captioning/eval/get_stanford_models.sh",
     use_images_instead_of_features=False,
     get_predictions=False,
     is_vizwiz=False,
@@ -364,14 +364,14 @@ def test(
         model_args.N_enc = 2
         model_args.N_dec = 2
 
-    img_size = 288
+    img_size = 384
     print(model_args.N_enc, model_args.N_dec)
     if is_end_to_end:
         from models.End_ExpansionNet_v2 import End_ExpansionNet_v2
 
         model = End_ExpansionNet_v2(
             swin_img_size=img_size,
-            swin_patch_size=3,
+            swin_patch_size=4,
             swin_in_chans=3,
             swin_embed_dim=192,
             swin_depths=[2, 2, 18, 2],
@@ -452,7 +452,11 @@ def test(
         print("Not ensemble")
         map_location = {"cuda:%d" % 0: "cuda:%d" % rank}
         checkpoint = torch.load(save_model_path, map_location=map_location)
-        model.load_state_dict(checkpoint["model_state_dict"], strict=is_end_to_end)
+        if model_args.load_pruned:
+            print("Loading pruned weights ...")
+            model.load_state_dict({k:(v if v.layout == torch.strided else v.to_dense()) for k,v in checkpoint.items()})
+        else:
+            model.load_state_dict(checkpoint["model_state_dict"], strict=is_end_to_end)
     else:
         print("Ensembling Evaluation")
         list_checkpoints = os.listdir(save_model_path)
@@ -567,14 +571,14 @@ if __name__ == "__main__":
     parser.add_argument(
         "--save_model_path",
         type=str,
-        default="/usr0/home/nvaikunt/On_Device_Image_Captioning/pretrained_weights/4_th.pth",
+        default="On_Device_Image_Captioning/pretrained_weights/base/4_th.pth",
     )
 
     parser.add_argument("--eval_parallel_batch_size", type=int, default=16)
     parser.add_argument("--eval_beam_sizes", type=str2list, default=[3])
-    parser.add_argument("--image_folder", type=str, default="./VizWizData")
+    parser.add_argument("--image_folder", type=str, default="./data")
     parser.add_argument(
-        "--vocab_path", type=str, default="./vocab/coco_vocab_idx_dict.json"
+        "--vocab_path", type=str, default="On_Device_Image_Captioning/vocab/coco_vocab_idx_dict.json"
     )
     parser.add_argument(
         "--images_path", type=str, default="./github_ignore_material/raw_data/"
@@ -610,6 +614,12 @@ if __name__ == "__main__":
         "1 - Remove layer in Encoder (Enc_dec)\n"
         "2 - Remove layer from Encoder and Decoder (Enc_deco_dec)",
     )
+    parser.add_argument(
+        '--load_pruned',
+        action='store_true',
+        default=False,
+        help='To load the sparsed pruned weights in the model'
+    )
 
     args = parser.parse_args()
     args.ddp_sync_port = str(args.ddp_sync_port)
@@ -634,13 +644,14 @@ if __name__ == "__main__":
         vizwiz=args.vizwiz,
         image_folder=args.image_folder,
         param_config=args.param_config,
+        load_pruned=args.load_pruned
     )
 
     print(model_args.param_config)
 
     if args.vizwiz:
         if os.path.isfile(args.vocab_path):
-            with open("./vocab/coco_vocab_idx_dict.json", "r") as vocab_json:
+            with open("On_Device_Image_Captioning/vocab/coco_vocab_idx_dict.json", "r") as vocab_json:
                 coco_vocab_idx_dict = json.load(vocab_json)
         else:
             coco_vocab_idx_dict = None
@@ -651,7 +662,7 @@ if __name__ == "__main__":
             train=False,
             val=True,
             coco_vocab_dict=coco_vocab_idx_dict,
-            vizwiz_annotations_dir="/usr0/home/nvaikunt/On_Device_Image_Captioning/VizWizData/annotations",
+            vizwiz_annotations_dir="./data/annotations",
         )
     else:
         dataset = CocoDatasetKarpathy(
