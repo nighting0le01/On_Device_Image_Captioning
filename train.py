@@ -10,7 +10,13 @@ import torch
 import torch.distributed as dist
 import torch.multiprocessing as mp
 import torch.optim as optim
-from torch.ao.quantization import QConfigMapping, get_default_qat_qconfig_mapping
+from torch.ao.quantization import QConfigMapping, get_default_qat_qconfig_mapping, QConfig
+from torch.ao.quantization.qconfig import default_embedding_qat_qconfig, default_qat_qconfig_v2, default_qat_qconfig
+from torch.ao.quantization.observer  import (
+    MovingAverageMinMaxObserver,
+    NoopObserver, 
+    PlaceholderObserver)
+from torch.ao.quantization.fake_quantize import default_embedding_fake_quant
 from torch.nn.parallel import DistributedDataParallel as DDP
 from data.coco_dataset import CocoDatasetKarpathy
 from data.coco_dataloader import CocoDataLoader
@@ -37,8 +43,8 @@ torch.autograd.set_detect_anomaly(False)
 torch.set_num_threads(1)
 torch.set_num_interop_threads(1)
 import functools
-from utils.quantization_utils import prepare_model, quantize_model, filter_state_dict
-from quantization import encoder_modules, decoder_modules
+from utils.quantization_utils import prepare_model
+from quantization import encoder_modules, decoder_modules, filter_state_dict
 from quantization_eval import evaluate_quantized_model_on_set, compute_quantized_evaluation_loss
 print = functools.partial(print, flush=True)
 
@@ -59,11 +65,11 @@ def train(
     max_len,
     ddp_sync_port,
 ):
+    num_sampled_captions = 5
     if not train_args.reinforce:
         loss_function = LabelSmoothingLoss(smoothing_coeff=0.1, rank=rank)
         loss_function.to(rank)
     else:  # 'rf'
-        num_sampled_captions = 5
         running_logprobs = 0
         running_reward = 0
         running_reward_base = 0
@@ -124,11 +130,15 @@ def train(
             batch_target_y = batch_target_y.to(rank)
             # create a list of sub-batches so tensors can be deleted right-away after being used
             if train_args.quantized:
+                import pdb; pdb.set_trace()
                 cross_enc_out = ddp_encoder(
                     enc_x=batch_input_x,
                     dec_x=batch_target_y[:, :-1],
                     enc_x_num_pads=batch_input_x_num_pads,
                     dec_x_num_pads=batch_target_y_num_pads)
+                print(f"First Pass!")
+       
+
                 pred_logprobs = ddp_decoder(
                         enc_x = cross_enc_out,
                         dec_x=batch_target_y[:, :-1],
@@ -141,10 +151,11 @@ def train(
                     enc_x_num_pads=batch_input_x_num_pads,
                     dec_x_num_pads=batch_target_y_num_pads,
                 )
-
+            # print(f"Log Probs {pred_logprobs}")
             loss = loss_function(
                 pred_logprobs, batch_target_y[:, 1:], dataset.get_pad_token_idx()
             )
+            # print(f"LOSS IS {loss}")
             running_loss += loss.item()
             loss.backward()
         else:  # rf mode
@@ -433,13 +444,13 @@ def distributed_train(
         model_args.N_enc = 2
         model_args.N_dec = 2
 
-    img_size = 288
+    img_size = 384
     if train_args.is_end_to_end:
         from models.End_ExpansionNet_v2 import End_ExpansionNet_v2, End_ExpansionNet_v2_Encoder, End_ExpansionNet_v2_Decoder
         if train_args.quantized:
 
             encoder_model = End_ExpansionNet_v2_Encoder(
-                swin_img_size=args.img_size,
+                swin_img_size=img_size,
                 swin_patch_size=4,
                 swin_in_chans=3,
                 swin_embed_dim=192,
@@ -466,8 +477,9 @@ def distributed_train(
                 num_exp_dec=16,
                 output_word2idx=dataset.caption_word2idx_dict,
                 output_idx2word=dataset.caption_idx2word_list,
-                max_seq_len=args.max_seq_len,
+                max_seq_len=model_max_len,
                 drop_args=model_args.drop_args,
+                eps=1e-8,
                 rank="cpu",
             )
 
@@ -481,8 +493,9 @@ def distributed_train(
                 num_exp_dec=16,
                 output_word2idx=dataset.caption_word2idx_dict,
                 output_idx2word=dataset.caption_idx2word_list,
-                max_seq_len=args.max_seq_len,
+                max_seq_len=model_max_len,
                 drop_args=model_args.drop_args,
+                eps=1e-8,
                 rank="cpu",
             )
         else: 
@@ -541,13 +554,21 @@ def distributed_train(
     if train_args.quantized: 
         if train_args.quantization_type == "static":
             static_qconfig_str = "x86"
-            qconfig_mapping = get_default_qat_qconfig_mapping(static_qconfig_str)
+            qconfig_mapping = get_default_qat_qconfig_mapping(static_qconfig_str, version=1)
+
+            #default_embedding_qat_qconfig = QConfig(activation=NoopObserver.with_args(dtype=torch.float32),
+            #                            weight=default_embedding_fake_quant)
+   
+            qconfig_mapping.set_object_type(torch.nn.Embedding, default_embedding_qat_qconfig)
+            # qconfig_mapping.set_object_type(torch.nn.Conv2d, default_qat_qconfig_v2)
+            # qconfig_mapping.set_object_type(torch.nn.Linear, default_qat_qconfig_v2)
+            # qconfig_mapping.set_object_type(torch.nn.ReLU, default_qat_qconfig_v2)
         else:
             qconfig_mapping = QConfigMapping().set_global(torch.ao.quantization.default_dynamic_qconfig)
         
         example_input = (
-            torch.randn(1, 3, args.img_size, args.img_size), 
-            torch.randint(1, 100, (1, 15)),
+            torch.randn(1, 3, img_size, img_size, device="cpu"), 
+            torch.randint(1, 100, (1, 15), device="cpu"),
             [0],
             [0]
         )
@@ -558,6 +579,8 @@ def distributed_train(
             print("Encoder loaded ...")
             decoder_model.load_state_dict(torch.load(path_args.decoder_load_path))
             print("Decoder loaded ...")
+            encoder_model.to(rank)
+            decoder_model.to(rank)
         else: 
             print("Loading encoder / decoder from unprepared full model")
             state_dict = torch.load(path_args.pretrain_checkpoint)["model_state_dict"]
@@ -570,11 +593,17 @@ def distributed_train(
             decoder_model.load_state_dict(decoder_state_dict)
             print("Decoder loaded ...")
             print("Preparing Encoder and Decoder Model")
-            encoder_model= prepare_model(encoder_model, example_input, qconfig_mapping)
+            encoder_model.to("cpu")
+            decoder_model.to("cpu")
+            encoder_model= prepare_model(encoder_model, example_input, qconfig_mapping, device="cpu", qat=True)
             print("Encoder prepared ...")
-            decoder_model = prepare_model(decoder_model, example_input, qconfig_mapping)
+            decoder_model = prepare_model(decoder_model, example_input, qconfig_mapping, device="cpu", qat=True)
             print("Decoder prepared ...")
+            print(encoder_model.activation_post_process_1138)
+            encoder_model.to(rank)
+            decoder_model.to(rank)
 
+        
 
 
     else: 
@@ -591,9 +620,10 @@ def distributed_train(
             load_state_dict_filtered(model, checkpoint, "dec")
             print(" Model with 2 Encoder & 2 Decoder Layers  loaded ...")
     if train_args.quantized: 
-        encoder_model.to(rank)
-        decoder_model.to(rank)
-        ddp_model = (DDP(encoder_model, device_ids=[rank]), DDP(decoder_model, device_ids=[rank]))
+        #ddp_encoder = DDP(encoder_model, device_ids=[rank])
+        #ddp_decoder = DDP(decoder_model, device_ids=[rank])
+        ddp_encoder = encoder_model
+        ddp_decoder = decoder_model
     else: 
         model.to(rank)
         ddp_model = DDP(model, device_ids=[rank])
@@ -652,16 +682,20 @@ def distributed_train(
             )
 
     base_lr = 1.0
+    if train_args.quantized:
+        params = list(ddp_encoder.parameters()) + list(ddp_decoder.parameters()) 
+    else: 
+        params = list(ddp_model.parameters())
     if optim_args.optim_type == "radam":
         optimizer = RAdam(
-            filter(lambda p: p.requires_grad, ddp_model.parameters()),
+            filter(lambda p: p.requires_grad, params),
             lr=base_lr,
             betas=(0.9, 0.98),
             eps=1e-9,
         )
     else:
         optimizer = optim.Adam(
-            filter(lambda p: p.requires_grad, ddp_model.parameters()), lr=base_lr
+            filter(lambda p: p.requires_grad, params), lr=base_lr
         )
 
     if optim_args.sched_type == "annealing":
@@ -716,20 +750,6 @@ def distributed_train(
                 print("Partial load done.")
     else:
         change_from_xe_to_rf = False
-        if path_args.save_path is not None:
-            _, additional_info = load_most_recent_checkpoint(
-                ddp_model.module,
-                optimizer,
-                sched,
-                data_loader,
-                rank,
-                path_args.save_path,
-            )
-            if additional_info == "xe" and train_args.reinforce:
-                change_from_xe_to_rf = True
-            else:
-                print("Training mode still in the same stage: " + additional_info)
-
         changed_batch_size = data_loader.get_batch_size() != train_args.batch_size
         if changed_batch_size or change_from_xe_to_rf:
             if changed_batch_size:
@@ -759,7 +779,8 @@ def distributed_train(
                 )
 
             sched = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=sched_func)
-
+    if train_args.quantized: 
+        ddp_model = (ddp_encoder, ddp_decoder)
     train(
         rank,
         train_args,
@@ -790,6 +811,15 @@ def spawn_train_processes(model_args, optim_args, dataset, train_args, path_args
     print("Requested num GPUs: " + str(train_args.num_gpus))
 
     array_of_init_seeds = [random.random() for _ in range(train_args.num_epochs * 2)]
+    distributed_train(0, train_args.num_gpus,
+            model_args,
+            optim_args,
+            dataset,
+            array_of_init_seeds,
+            max_sequence_length,
+            train_args,
+            path_args,)
+    """
     mp.spawn(
         distributed_train,
         args=(
@@ -804,7 +834,7 @@ def spawn_train_processes(model_args, optim_args, dataset, train_args, path_args
         ),
         nprocs=train_args.num_gpus,
         join=True,
-    )
+    )"""
 
 
 if __name__ == "__main__":

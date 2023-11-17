@@ -494,6 +494,7 @@ class End_ExpansionNet_v2_Encoder(CaptioningModel):
         output_idx2word,
         max_seq_len,
         drop_args,
+        eps=1e-9,
         rank=0,
     ):
         super(End_ExpansionNet_v2_Encoder, self).__init__()
@@ -530,7 +531,7 @@ class End_ExpansionNet_v2_Encoder(CaptioningModel):
 
         self.encoders = nn.ModuleList(
             [
-                EncoderLayer(d_model, ff, num_exp_enc_list, drop_args.enc)
+                EncoderLayer(d_model, ff, num_exp_enc_list, drop_args.enc, eps=eps)
                 for _ in range(N_enc)
             ]
         )
@@ -611,6 +612,7 @@ class End_ExpansionNet_v2_Decoder(CaptioningModel):
         output_idx2word,
         max_seq_len,
         drop_args,
+        eps=1e-9,
         rank=0,
     ):
         super(End_ExpansionNet_v2_Decoder, self).__init__()
@@ -627,7 +629,7 @@ class End_ExpansionNet_v2_Decoder(CaptioningModel):
 
         self.decoders = nn.ModuleList(
             [
-                DecoderLayer(d_model, num_heads, ff, num_exp_dec, drop_args.dec)
+                DecoderLayer(d_model, num_heads, ff, num_exp_dec, drop_args.dec, eps=eps)
                 for _ in range(N_dec)
             ]
         )
