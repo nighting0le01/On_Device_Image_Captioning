@@ -56,8 +56,12 @@ class StaticExpansionBlock(nn.Module):
         class_b_fw = F.relu(-z)
         class_a_fw = class_a_fw.masked_fill(mask == 0, 0.0)
         class_b_fw = class_b_fw.masked_fill(mask == 0, 0.0)
-        class_a_fw = class_a_fw / (class_a_fw.sum(dim=-1, keepdim=True) + self.eps)
-        class_b_fw = class_b_fw / (class_b_fw.sum(dim=-1, keepdim=True) + self.eps)
+        class_a_fw_sum = torch.sum(class_a_fw + self.eps, dim=-1, keepdim=True)
+        class_b_fw_sum = torch.sum(class_b_fw + self.eps, dim=-1, keepdim=True)
+        # class_a_fw = class_a_fw / (class_a_fw.sum(dim=-1, keepdim=True) + self.eps)
+        # class_b_fw = class_b_fw / (class_b_fw.sum(dim=-1, keepdim=True) + self.eps)
+        class_a_fw = class_a_fw / class_a_fw_sum
+        class_b_fw = class_b_fw / class_b_fw_sum
 
         class_a = torch.matmul(class_a_fw, self.class_a_embed(x)) + bias_exp
         class_b = torch.matmul(class_b_fw, self.class_b_embed(x)) + bias_exp
@@ -77,15 +81,15 @@ class StaticExpansionBlock(nn.Module):
             class_a_bw_list.append(
                 class_a_bw[:, :, from_idx:to_idx]
                 / (
-                    class_a_bw[:, :, from_idx:to_idx].sum(dim=-1, keepdim=True)
-                    + self.eps
+                    torch.sum(class_a_bw[:, :, from_idx:to_idx] + self.eps, 
+                              dim=-1, keepdim=True)
                 )
             )
             class_b_bw_list.append(
                 class_b_bw[:, :, from_idx:to_idx]
                 / (
-                    class_b_bw[:, :, from_idx:to_idx].sum(dim=-1, keepdim=True)
-                    + self.eps
+                    torch.sum(class_b_bw[:, :, from_idx:to_idx] + self.eps, 
+                              dim=-1, keepdim=True)
                 )
             )
         class_a_bw = torch.cat(class_a_bw_list, dim=-1)
@@ -173,8 +177,13 @@ class DynamicExpansionBlock(nn.Module):
         class_b_fw = F.relu(-z)
         class_a_fw = class_a_fw.masked_fill(mod_mask_1 == 0, 0.0)
         class_b_fw = class_b_fw.masked_fill(mod_mask_1 == 0, 0.0)
-        class_a_fw = class_a_fw / (class_a_fw.sum(dim=-1, keepdim=True) + self.eps)
-        class_b_fw = class_b_fw / (class_b_fw.sum(dim=-1, keepdim=True) + self.eps)
+        class_a_fw_sum = torch.sum(class_a_fw + self.eps, dim=-1, keepdim=True)
+        class_b_fw_sum = torch.sum(class_b_fw + self.eps, dim=-1, keepdim=True)
+        # class_a_fw = class_a_fw / (class_a_fw.sum(dim=-1, keepdim=True) + self.eps)
+        # class_b_fw = class_b_fw / (class_b_fw.sum(dim=-1, keepdim=True) + self.eps)
+        class_a_fw = class_a_fw / class_a_fw_sum
+        class_b_fw = class_b_fw / class_b_fw_sum
+
         class_a = torch.matmul(class_a_fw, self.class_a_embed(x))
         class_b = torch.matmul(class_b_fw, self.class_b_embed(x))
         class_a = self.dropout_class_a_fw(class_a)
@@ -191,8 +200,12 @@ class DynamicExpansionBlock(nn.Module):
         class_b_bw = F.relu(-z.transpose(-2, -1))
         class_a_bw = class_a_bw.masked_fill(mod_mask_2 == 0, 0.0)
         class_b_bw = class_b_bw.masked_fill(mod_mask_2 == 0, 0.0)
-        class_a_bw = class_a_bw / (class_a_bw.sum(dim=-1, keepdim=True) + self.eps)
-        class_b_bw = class_b_bw / (class_b_bw.sum(dim=-1, keepdim=True) + self.eps)
+        class_a_bw_sum = torch.sum(class_a_bw + self.eps, dim=-1, keepdim=True)
+        class_b_bw_sum = torch.sum(class_b_bw + self.eps, dim=-1, keepdim=True)
+        #class_a_bw = class_a_bw / (class_a_bw.sum(dim=-1, keepdim=True) + self.eps)
+        #class_b_bw = class_b_bw / (class_b_bw.sum(dim=-1, keepdim=True) + self.eps)
+        class_a_bw = class_a_bw / class_a_bw_sum
+        class_b_bw = class_b_bw / class_b_bw_sum
         class_a = torch.matmul(class_a_bw, class_a + bias_exp)
         class_b = torch.matmul(class_b_bw, class_b + bias_exp)
         class_a = self.dropout_class_a_bw(class_a)

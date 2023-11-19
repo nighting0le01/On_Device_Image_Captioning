@@ -10,7 +10,8 @@ import torch
 import torch.distributed as dist
 import torch.multiprocessing as mp
 import torch.optim as optim
-from torch.ao.quantization import QConfigMapping, get_default_qat_qconfig_mapping, QConfig
+from torch.ao.quantization import QConfigMapping, get_default_qat_qconfig_mapping, QConfig, get_default_qconfig_mapping
+from torch.ao.quantization.quantize_fx import convert_fx
 from torch.ao.quantization.qconfig import default_embedding_qat_qconfig, default_qat_qconfig_v2, default_qat_qconfig
 from torch.ao.quantization.observer  import (
     MovingAverageMinMaxObserver,
@@ -105,8 +106,10 @@ def train(
     for it in range(already_trained_steps, num_iter):
         iter_timer_start = time()
         if train_args.quantized:
-            ddp_encoder.train()
-            ddp_decoder.train()
+            # ddp_encoder.train()
+            # ddp_decoder.train()
+            ddp_encoder.eval()
+            ddp_decoder.eval()
         else: 
             ddp_model.train()
 
@@ -130,12 +133,15 @@ def train(
             batch_target_y = batch_target_y.to(rank)
             # create a list of sub-batches so tensors can be deleted right-away after being used
             if train_args.quantized:
+         
                 import pdb; pdb.set_trace()
+
                 cross_enc_out = ddp_encoder(
                     enc_x=batch_input_x,
                     dec_x=batch_target_y[:, :-1],
                     enc_x_num_pads=batch_input_x_num_pads,
                     dec_x_num_pads=batch_target_y_num_pads)
+                print(it)
                 print(f"First Pass!")
        
 
@@ -554,12 +560,12 @@ def distributed_train(
     if train_args.quantized: 
         if train_args.quantization_type == "static":
             static_qconfig_str = "x86"
-            qconfig_mapping = get_default_qat_qconfig_mapping(static_qconfig_str, version=1)
-
+            #qconfig_mapping = get_default_qat_qconfig_mapping(static_qconfig_str, version=1)
+            qconfig_mapping = get_default_qconfig_mapping(static_qconfig_str)
             #default_embedding_qat_qconfig = QConfig(activation=NoopObserver.with_args(dtype=torch.float32),
             #                            weight=default_embedding_fake_quant)
    
-            qconfig_mapping.set_object_type(torch.nn.Embedding, default_embedding_qat_qconfig)
+            # qconfig_mapping.set_object_type(torch.nn.Embedding, default_embedding_qat_qconfig)
             # qconfig_mapping.set_object_type(torch.nn.Conv2d, default_qat_qconfig_v2)
             # qconfig_mapping.set_object_type(torch.nn.Linear, default_qat_qconfig_v2)
             # qconfig_mapping.set_object_type(torch.nn.ReLU, default_qat_qconfig_v2)
@@ -595,9 +601,9 @@ def distributed_train(
             print("Preparing Encoder and Decoder Model")
             encoder_model.to("cpu")
             decoder_model.to("cpu")
-            encoder_model= prepare_model(encoder_model, example_input, qconfig_mapping, device="cpu", qat=True)
+            encoder_model= prepare_model(encoder_model, example_input, qconfig_mapping, device="cpu", qat=False)
             print("Encoder prepared ...")
-            decoder_model = prepare_model(decoder_model, example_input, qconfig_mapping, device="cpu", qat=True)
+            decoder_model = prepare_model(decoder_model, example_input, qconfig_mapping, device="cpu", qat=False)
             print("Decoder prepared ...")
             print(encoder_model.activation_post_process_1138)
             encoder_model.to(rank)
