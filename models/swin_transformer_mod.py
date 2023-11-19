@@ -258,7 +258,8 @@ class WindowAttention(nn.Module):
                 1
             ).unsqueeze(0)
             attn = attn.view(-1, self.num_heads, N, N)
-            attn[:, 1::2, :, :] = float('-inf') ## prune heads: currently every 2nd 
+            
+            #attn[:, 1::2, :, :] = float('-inf') ## prune heads: currently every 2nd 
             attn = self.softmax(attn)
         else:
             attn = self.softmax(attn)
