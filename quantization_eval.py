@@ -26,6 +26,7 @@ from utils.quantization_utils import (
     prepare_model,
     quantize_model,
 )
+from quantization import demo_quantized_model
 from torch.ao.quantization.qconfig import default_embedding_qat_qconfig
 from torch.ao.quantization.quantize_fx import prepare_fx, convert_fx
 from torch.ao.quantization import get_default_qconfig_mapping, QConfigMapping, get_default_qat_qconfig_mapping
@@ -326,6 +327,7 @@ def main():
     parser.add_argument(
         "--model_type", type=str, default="qat", help="Model Type to Load"
     )
+    parser.add_argument("--demo", type=str2bool, default=False)
     args = parser.parse_args()
     torch.manual_seed(args.seed)
 
@@ -400,7 +402,6 @@ def main():
         rank="cpu",
     )
 
-
     # Get quantized model structures
     model_type = args.model_type
     if model_type == "static":
@@ -433,10 +434,9 @@ def main():
         print("Prepared Encoder Object ...")
         prepared_decoder = prepare_model(decoder_model, example_input, qconfig_mapping, qat=is_qat)
         print("Prepared Decoder Object ...")
-
-        prepared_encoder.load_state_dict(torch.load(args.encoder_load_path)["model_state_dict"])
+        prepared_encoder.load_state_dict(torch.load(args.encoder_load_path, map_location="cpu")["model_state_dict"])
         print("Prepared Encoder Weights loaded ...")
-        prepared_decoder.load_state_dict(torch.load(args.decoder_load_path)["model_state_dict"])
+        prepared_decoder.load_state_dict(torch.load(args.decoder_load_path, map_location="cpu")["model_state_dict"])
         print("Prepared Decoder Weights loaded ...")
         encoder_model = quantize_model(prepared_encoder)
         print("Quantized Encoder!")
@@ -458,36 +458,43 @@ def main():
     #     print(prepared_decoder, file=f)
     # sys.exit()
 
-
-    image_folder = args.image_folder
-    array_of_init_seeds = [random.random() for _ in range(1 * 2)]
-    data_loader = VizWizDataLoader(
-        vizwiz_dataset=dataset,
-        batch_size=4,
-        num_procs=1,
-        array_of_init_seeds=array_of_init_seeds,
-        dataloader_mode="caption_wise",
-        resize_image_size=args.img_size,
-        rank=args.device,
-        image_folder=image_folder,
-        verbose=True,
-    )
-    model_max_len = dataset.max_seq_len + 20
-    print("DataLoader initialized ...")
-    evaluate_quantized_model_on_set(
-        encoder_model,
-        decoder_model,
-        dataset.caption_idx2word_list,
-        dataset.get_sos_token_idx(),
-        dataset.get_eos_token_idx(),
-        dataset.val_num_images,
-        data_loader,
-        VizWizDataset.ValidationSet_ID,
-        model_max_len,
-        args.device,
-        batch_size=args.batch_size,
-        beam_size=args.beam_size,
-    )
+    if args.demo: 
+        demo_images = os.listdir("./vizwiz_demo")
+        for file in demo_images: 
+            print(file)
+            path = os.path.join("./vizwiz_demo", file)
+            demo_quantized_model(encoder_model, decoder_model, path, dataset.caption_idx2word_list, sos_idx=dataset.get_sos_token_idx(),
+                eos_idx=dataset.get_eos_token_idx())
+    else: 
+        image_folder = args.image_folder
+        array_of_init_seeds = [random.random() for _ in range(1 * 2)]
+        data_loader = VizWizDataLoader(
+            vizwiz_dataset=dataset,
+            batch_size=4,
+            num_procs=1,
+            array_of_init_seeds=array_of_init_seeds,
+            dataloader_mode="caption_wise",
+            resize_image_size=args.img_size,
+            rank=args.device,
+            image_folder=image_folder,
+            verbose=True,
+        )
+        model_max_len = dataset.max_seq_len + 20
+        print("DataLoader initialized ...")
+        evaluate_quantized_model_on_set(
+            encoder_model,
+            decoder_model,
+            dataset.caption_idx2word_list,
+            dataset.get_sos_token_idx(),
+            dataset.get_eos_token_idx(),
+            dataset.val_num_images,
+            data_loader,
+            VizWizDataset.ValidationSet_ID,
+            model_max_len,
+            args.device,
+            batch_size=args.batch_size,
+            beam_size=args.beam_size,
+        )
 
 
 if __name__ == "__main__":
