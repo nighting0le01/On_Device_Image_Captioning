@@ -18,6 +18,7 @@ print(sys.path)
 from legacy_models.End_ExpansionNet_v2 import End_ExpansionNet_v2
 from utils.image_utils import preprocess_image
 from utils.language_utils import tokens2description
+from utils.quantization_utils import print_size_of_model
 
 # from fvcore.nn import FlopCountAnalysis, flop_count_table, flop_count_str
 from thop import profile
@@ -57,15 +58,18 @@ def compute_FLOPS(model, img_size, sos_idx, eos_idx, beam_size, max_seq_len):
     print(flops)
 
 
-def compute_parameters(model):
-    print(model)
+def compute_parameters(model, verbose=False):
+    if verbose: 
+        print(model)
     total_params = 0
     for name, param in model.named_parameters():
         if param.requires_grad:
             num_params = param.numel()
-            print(f"Layer: {name}, Parameters: {num_params}")
+            if verbose: 
+                print(f"Layer: {name}, Parameters: {num_params}")
             total_params += num_params
     print(f"Total Trainable Parameters: {total_params}")
+    return total_params
 
 
 def compute_inference_Latency(
@@ -170,43 +174,60 @@ def prune_model(model, n_prune, checkpoint_name):
     calculate_pruned_size(c_model, checkpoint_name, weight_names)
 
 
-def prune_param(param, heads_to_prune, total_heads):
-    in_channels = param.shape[-1]
-    heads = param.reshape(total_heads, -1, in_channels)
-    importances = torch.norm(heads, dim=(1, 2))
-    print(f"Norms: {importances}")
+def prune_attn_params(q, k, v, heads_to_prune, total_heads):
+    in_channels = v.shape[-1]
+    q_heads = q.reshape(total_heads, -1, in_channels)
+    k_heads = k.reshape(total_heads, -1, in_channels)
+    v_heads = v.reshape(total_heads, -1, in_channels)
+    importances = torch.norm(v_heads, dim=(1, 2))
+    # print(f"Norms: {importances}")
     _, bottom_idx = torch.topk(-importances, k=heads_to_prune)
-    print(f"Heads to cut: {bottom_idx}")
-    heads[bottom_idx] = 0
-    return heads.reshape(-1, in_channels)
+    # print(f"Heads to cut: {bottom_idx}")
+    q_heads[bottom_idx] = 0
+    k_heads[bottom_idx] = 0
+    v_heads[bottom_idx] = 0
+
+    return q_heads.reshape(-1, in_channels), k_heads.reshape(-1, in_channels), v_heads.reshape(-1, in_channels)
 
 
-def structured_head_pruning(state_dict, num_heads=[6, 12, 24, 48], prune_pct=(1 / 3)):
+def structured_head_pruning(state_dict, num_heads=[6, 12, 24, 48], prune_pct=(1 / 3), prune_only = None):
     num_params_pruned = 0
     for name, param in state_dict.items():
         if "attn.qkv.weight" in name:
 
-            print(name)
-            print(f"Orig_Shape: {param.shape}")
+            # print(name)
+            # print(f"Orig_Shape: {param.shape}")
             layer_num = name.split(".")[2]
             in_channels = param.shape[-1]
+            if prune_only is None or prune_only == layer_num: 
+                q, k, v = param.reshape(3, in_channels, in_channels)
+                total_heads = num_heads[int(layer_num)]
+                heads_to_prune = int(total_heads * prune_pct)
+                # print(f"Heads to Prune, Total Heads: {heads_to_prune},{total_heads}")
+                # print(f"Query Matrix Shape {q.shape}")
 
-            q, k, v = param.reshape(3, in_channels, in_channels)
-            total_heads = num_heads[int(layer_num)]
-            heads_to_prune = int(total_heads * prune_pct)
-            print(f"Heads to Prune, Total Heads: {heads_to_prune},{total_heads}")
-            print(f"Query Matrix Shape {q.shape}")
-
-            pruned_q = prune_param(q, heads_to_prune, total_heads)
-            pruned_k = prune_param(k, heads_to_prune, total_heads)
-            pruned_v = prune_param(v, heads_to_prune, total_heads)
-            pruned_qkv = torch.cat((pruned_q, pruned_k, pruned_v), dim=0)
-            print(f"New_Shape: {pruned_qkv.shape}")
-            num_params_pruned += prune_pct * param.shape[0] * param.shape[1]
-            state_dict[name] = pruned_qkv
+                pruned_q, pruned_k, pruned_v = prune_attn_params(q, k, v, heads_to_prune, total_heads)
+                pruned_qkv = torch.cat((pruned_q, pruned_k, pruned_v), dim=0)
+                # print(f"New_Shape: {pruned_qkv.shape}")
+                num_params_pruned += prune_pct * param.shape[0] * param.shape[1]
+                state_dict[name] = pruned_qkv
     print(f"Total_Pruned: {num_params_pruned}")
     return state_dict, num_params_pruned
 
+def structured_pruning_stats(pruned_state_dict, pruned_params, total_params, ckpt_name="pruned_rf.pth"):
+    print(f"Sparsity of the model is {pruned_params / total_params}")
+    copied_state_dict = {}
+    for key in pruned_state_dict: 
+        if "attn.qkv.weight" in key:
+            copied_state_dict[key] = pruned_state_dict[key].to_sparse()
+        else: 
+            copied_state_dict[key] = pruned_state_dict[key]
+    torch.save(copied_state_dict, ckpt_name)
+    print(
+        f'Size of the pruned model: {os.path.getsize(ckpt_name)/1e6} MB'
+    )
+    os.remove(ckpt_name)
+    
 
 def main():
     parser = argparse.ArgumentParser("ExpansionNet Benchmarking")
@@ -239,6 +260,9 @@ def main():
     )
     parser.add_argument(
         "--prune", action="store_true", default=False, help="To Prune the model"
+    )
+    parser.add_argument(
+        "--structured_prune", action="store_true", default=False, help="Structured Pruning and Stats"
     )
     parser.add_argument(
         "--prune_count", type=int, default=1, help="No. of times to prune the model"
@@ -350,17 +374,22 @@ def main():
         print("Model loaded with pruned weights ...")
     else:
         checkpoint = torch.load(args.load_path)
-        structured_head_pruning(checkpoint["model_state_dict"])
         model.load_state_dict(checkpoint["model_state_dict"])
         print("Model loaded ...")
+        if args.structured_prune: 
+            total_params = compute_parameters(model)
+            print_size_of_model(model)
+            pruned_param_dict, num_pruned = structured_head_pruning(checkpoint["model_state_dict"], prune_pct=(1/3))
+            structured_pruning_stats(pruned_state_dict=pruned_param_dict, pruned_params=num_pruned, total_params=total_params)
 
     if args.prune:
         print("Pruning")
         prune_model(model, args.prune_count, f"prune_{args.prune_count}")
+    
 
     if args.compute_params:
         print("Computing params")
-        compute_parameters(model)
+        compute_parameters(model, verbose=True)
 
     if args.compute_FLOPS:
         print("Computing FLOPS")

@@ -13,6 +13,7 @@ import torch.multiprocessing as mp
 from torch.nn.parallel import DistributedDataParallel as DDP
 
 from models.ensemble_captioning_model import EsembleCaptioningModel
+from benchmarking.benchmarking import structured_head_pruning, structured_pruning_stats, compute_parameters
 from data.coco_dataloader import CocoDataLoader
 from data.coco_dataset import CocoDatasetKarpathy
 from data.vizwiz_dataset import VizWizDataset
@@ -367,7 +368,7 @@ def test(
     img_size = 384
     print(model_args.N_enc, model_args.N_dec)
     if is_end_to_end:
-        from models.End_ExpansionNet_v2 import End_ExpansionNet_v2
+        from legacy_models.End_ExpansionNet_v2 import End_ExpansionNet_v2
 
         model = End_ExpansionNet_v2(
             swin_img_size=img_size,
@@ -402,7 +403,7 @@ def test(
             rank=rank,
         )
     else:
-        from models.ExpansionNet_v2 import ExpansionNet_v2
+        from legacy_models.ExpansionNet_v2 import ExpansionNet_v2
 
         model = ExpansionNet_v2(
             d_model=model_args.model_dim,
@@ -460,6 +461,13 @@ def test(
                     for k, v in checkpoint.items()
                 }
             )
+        elif model_args.structured_prune:
+            checkpoint = torch.load(save_model_path)
+            pruned_param_dict, _ = structured_head_pruning(checkpoint["model_state_dict"], prune_pct=(1/3))
+            model.to("cpu")
+            print("Loading structurally pruned weights ...")
+            model.load_state_dict(pruned_param_dict)
+            model.to(rank)
         else:
             model.load_state_dict(checkpoint["model_state_dict"], strict=is_end_to_end)
     else:
@@ -576,7 +584,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--save_model_path",
         type=str,
-        default="On_Device_Image_Captioning/pretrained_weights/base/4_th.pth",
+        default="./pretrained_weights/base/4_th.pth",
     )
 
     parser.add_argument("--eval_parallel_batch_size", type=int, default=16)
@@ -585,7 +593,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--vocab_path",
         type=str,
-        default="On_Device_Image_Captioning/vocab/coco_vocab_idx_dict.json",
+        default="./vocab/coco_vocab_idx_dict.json",
     )
     parser.add_argument(
         "--images_path", type=str, default="./github_ignore_material/raw_data/"
@@ -596,6 +604,9 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--captions_path", type=str, default="./github_ignore_material/raw_data/"
+    )
+    parser.add_argument(
+        "--structured_prune", action="store_true", default=False, help="Structured Pruning and Stats"
     )
     # parser.add_argument('--pretrain_checkpoint', type=str, default="/home/arpitsah/Desktop/Fall-2023/odml/On_Device_Image_Captioning/pretrained_weightscheckpoint_2023-10-12-13:36:34_epoch4it1968bs8_xe_.pth")
     parser.add_argument("--vizwiz", type=str2bool, default=True)
@@ -614,7 +625,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--param_config",
         type=int,
-        default=1,
+        default=0,
         choices=[0, 1, 2],
         help="Choose a mode: \n"
         "0 - Baseline\n"
@@ -652,14 +663,16 @@ if __name__ == "__main__":
         image_folder=args.image_folder,
         param_config=args.param_config,
         load_pruned=args.load_pruned,
+        structured_prune=args.structured_prune
     )
+    
 
     print(model_args.param_config)
 
     if args.vizwiz:
         if os.path.isfile(args.vocab_path):
             with open(
-                "On_Device_Image_Captioning/vocab/coco_vocab_idx_dict.json", "r"
+                args.vocab_path, "r"
             ) as vocab_json:
                 coco_vocab_idx_dict = json.load(vocab_json)
         else:
@@ -671,7 +684,7 @@ if __name__ == "__main__":
             train=False,
             val=True,
             coco_vocab_dict=coco_vocab_idx_dict,
-            vizwiz_annotations_dir="./data/annotations",
+            vizwiz_annotations_dir=f"{args.image_folder}/annotations",
         )
     else:
         dataset = CocoDatasetKarpathy(
