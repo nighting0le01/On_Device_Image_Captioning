@@ -12,8 +12,10 @@ from argparse import Namespace
 import sys
 from copy import deepcopy
 import torch.nn.utils.prune as prune
-sys.path.append("On_Device_Image_Captioning")
-from models.End_ExpansionNet_v2 import End_ExpansionNet_v2
+
+sys.path.append("/usr0/home/nvaikunt/On_Device_Image_Captioning")
+print(sys.path)
+from legacy_models.End_ExpansionNet_v2 import End_ExpansionNet_v2
 from utils.image_utils import preprocess_image
 from utils.language_utils import tokens2description
 
@@ -76,7 +78,7 @@ def compute_inference_Latency(
     beam_size,
     max_seq_len,
     plots_path,
-    device
+    device,
 ):
     model = model.to(device)
     model.eval()
@@ -120,35 +122,91 @@ def compute_inference_Latency(
     plt.savefig(f"{plots_path}/inference_latency.png")
     plt.show()
 
+
 def calculate_sparsity(buffer):
     total_zeros = 0
     total_params = 0
-    for x,y in buffer:
+    for x, y in buffer:
         curr_zeros = float(torch.sum(y == 0))
         curr_params = torch.flatten(y).shape[0]
         total_zeros += curr_zeros
         total_params += curr_params
-        sp = (curr_zeros/curr_params)*100
+        sp = (curr_zeros / curr_params) * 100
         print(f"Sparsity in {x} is {sp:.2f}%")
-    print(f"Overall Sparsity of the pruned parameters is {(total_zeros/total_params)*100:.2f}%")
+    print(
+        f"Overall Sparsity of the pruned parameters is {(total_zeros/total_params)*100:.2f}%"
+    )
+
 
 def calculate_pruned_size(model, checkpoint_name, weight_names):
     for i in range(0, len(weight_names)):
-        prune.remove(weight_names[i][0], 'weight')
+        prune.remove(weight_names[i][0], "weight")
     sd = model.state_dict()
     for item in sd:
         sd[item] = model.state_dict()[item].to_sparse()
     torch.save(sd, f"On_Device_Image_Captioning/pruned_weights/{checkpoint_name}.pth")
-    print(f'Size of the pruned model: {os.path.getsize(f"On_Device_Image_Captioning/pruned_weights/{checkpoint_name}.pth")/1e6} MB')
+    print(
+        f'Size of the pruned model: {os.path.getsize(f"On_Device_Image_Captioning/pruned_weights/{checkpoint_name}.pth")/1e6} MB'
+    )
+
 
 def prune_model(model, n_prune, checkpoint_name):
     c_model = deepcopy(model)
-    weight_names = [(m[1], "weight") for m in c_model.named_modules() if len(list(m[1].children()))==0 and not isinstance(m[1], (nn.Dropout, nn.Sigmoid, nn.GELU, nn.Identity, nn.Softmax, nn.LogSoftmax))]
+    weight_names = [
+        (m[1], "weight")
+        for m in c_model.named_modules()
+        if len(list(m[1].children())) == 0
+        and not isinstance(
+            m[1],
+            (nn.Dropout, nn.Sigmoid, nn.GELU, nn.Identity, nn.Softmax, nn.LogSoftmax),
+        )
+    ]
     for _ in range(n_prune):
-        prune.global_unstructured(weight_names, pruning_method=prune.L1Unstructured, amount=0.33)
+        prune.global_unstructured(
+            weight_names, pruning_method=prune.L1Unstructured, amount=0.33
+        )
     buffer = list(c_model.named_buffers())
     calculate_sparsity(buffer)
     calculate_pruned_size(c_model, checkpoint_name, weight_names)
+
+
+def prune_param(param, heads_to_prune, total_heads):
+    in_channels = param.shape[-1]
+    heads = param.reshape(total_heads, -1, in_channels)
+    importances = torch.norm(heads, dim=(1, 2))
+    print(f"Norms: {importances}")
+    _, bottom_idx = torch.topk(-importances, k=heads_to_prune)
+    print(f"Heads to cut: {bottom_idx}")
+    heads[bottom_idx] = 0
+    return heads.reshape(-1, in_channels)
+
+
+def structured_head_pruning(state_dict, num_heads=[6, 12, 24, 48], prune_pct=(1 / 3)):
+    num_params_pruned = 0
+    for name, param in state_dict.items():
+        if "attn.qkv.weight" in name:
+
+            print(name)
+            print(f"Orig_Shape: {param.shape}")
+            layer_num = name.split(".")[2]
+            in_channels = param.shape[-1]
+
+            q, k, v = param.reshape(3, in_channels, in_channels)
+            total_heads = num_heads[int(layer_num)]
+            heads_to_prune = int(total_heads * prune_pct)
+            print(f"Heads to Prune, Total Heads: {heads_to_prune},{total_heads}")
+            print(f"Query Matrix Shape {q.shape}")
+
+            pruned_q = prune_param(q, heads_to_prune, total_heads)
+            pruned_k = prune_param(k, heads_to_prune, total_heads)
+            pruned_v = prune_param(v, heads_to_prune, total_heads)
+            pruned_qkv = torch.cat((pruned_q, pruned_k, pruned_v), dim=0)
+            print(f"New_Shape: {pruned_qkv.shape}")
+            num_params_pruned += prune_pct * param.shape[0] * param.shape[1]
+            state_dict[name] = pruned_qkv
+    print(f"Total_Pruned: {num_params_pruned}")
+    return state_dict, num_params_pruned
+
 
 def main():
     parser = argparse.ArgumentParser("ExpansionNet Benchmarking")
@@ -176,26 +234,20 @@ def main():
     parser.add_argument(
         "--compute_params",
         action="store_true",
-        default=True,
+        default=False,
         help="To Compute parameters",
     )
     parser.add_argument(
-        '--prune',
-        action='store_true',
-        default=False,
-        help='To Prune the model'
+        "--prune", action="store_true", default=False, help="To Prune the model"
     )
     parser.add_argument(
-        '--prune_count',
-        type=int,
-        default=1,
-        help='No. of times to prune the model'
+        "--prune_count", type=int, default=1, help="No. of times to prune the model"
     )
     parser.add_argument(
-        '--load_pruned_model',
-        action='store_true',
+        "--load_pruned_model",
+        action="store_true",
         default=False,
-        help='To load the sparsed pruned weights in the model'
+        help="To load the sparsed pruned weights in the model",
     )
     parser.add_argument(
         "--img_size", type=int, default=384, help=" Image size for Swin Transformer"
@@ -234,7 +286,7 @@ def main():
         type=str,
         default="On_Device_Image_Captioning/benchmarking/plots",
     )
-    parser.add_argument('--device', type=str, default='cuda:0')
+    parser.add_argument("--device", type=str, default="cuda:0")
     args = parser.parse_args()
     torch.manual_seed(args.seed)
 
@@ -248,7 +300,7 @@ def main():
     )
 
     with open(
-        "On_Device_Image_Captioning/demo_material/demo_coco_tokens.pickle", "rb"
+        "../On_Device_Image_Captioning/demo_material/demo_coco_tokens.pickle", "rb"
     ) as f:
         coco_tokens = pickle.load(f)
         sos_idx = coco_tokens["word2idx_dict"][coco_tokens["sos_str"]]
@@ -289,10 +341,16 @@ def main():
 
     if args.load_pruned_model:
         sparse_checkpoint = torch.load(args.load_path)
-        model.load_state_dict({k:(v if v.layout == torch.strided else v.to_dense()) for k,v in sparse_checkpoint.items()})
+        model.load_state_dict(
+            {
+                k: (v if v.layout == torch.strided else v.to_dense())
+                for k, v in sparse_checkpoint.items()
+            }
+        )
         print("Model loaded with pruned weights ...")
     else:
         checkpoint = torch.load(args.load_path)
+        structured_head_pruning(checkpoint["model_state_dict"])
         model.load_state_dict(checkpoint["model_state_dict"])
         print("Model loaded ...")
 
@@ -318,9 +376,18 @@ def main():
     if args.compute_inference_time:
         print("Computing Average Inference Time")
         print(model)
-        compute_inference_Latency(model=model,num_runs=100,img_size=args.img_size,coco_tokens=coco_tokens,
-                                  sos_idx=sos_idx,eos_idx=eos_idx,
-                                  beam_size=args.beam_size,max_seq_len= args.max_seq_len,plots_path=args.plots_path, device=args.device )
+        compute_inference_Latency(
+            model=model,
+            num_runs=100,
+            img_size=args.img_size,
+            coco_tokens=coco_tokens,
+            sos_idx=sos_idx,
+            eos_idx=eos_idx,
+            beam_size=args.beam_size,
+            max_seq_len=args.max_seq_len,
+            plots_path=args.plots_path,
+            device=args.device,
+        )
         return
 
 

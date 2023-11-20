@@ -168,3 +168,6 @@ pretrained_weightscheckpoint*
 .gitignore
 benchmarking/plots/
 pruned_weights
+.vscode
+output.txt
+reg_output.txt

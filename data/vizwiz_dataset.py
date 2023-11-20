@@ -275,14 +275,13 @@ class VizWizDataset(Dataset):
         tmp = language_utils.remove_punctuations(tmp)
         tokenized_caption = ["SOS"] + language_utils.tokenize(tmp)[0] + ["EOS"]
         return tokenized_caption
-    
-    
+
     def get_all_images_captions(self, dataset_split):
         all_image_references = []
 
         if dataset_split == VizWizDataset.TestSet_ID:
             dataset = self.test_list
-        elif dataset_split ==VizWizDataset.ValidationSet_ID:
+        elif dataset_split == VizWizDataset.ValidationSet_ID:
             dataset = self.val_list
         else:
             dataset = self.train_list

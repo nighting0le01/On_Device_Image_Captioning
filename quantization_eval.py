@@ -13,15 +13,26 @@ from utils.language_utils import compute_num_pads as compute_num_pads
 from eval.eval import COCOEvalCap
 from data.vizwiz_dataset import VizWizDataset
 from data.vizwiz_dataloader import VizWizDataLoader
-from models.End_ExpansionNet_v2 import End_ExpansionNet_v2, End_ExpansionNet_v2_Encoder, End_ExpansionNet_v2_Decoder, E2E_ExpansionNet_Captioner
-from utils.quantization_utils import print_size_of_model, quantize_encoder_decoder, prepare_model, quantize_model
+from models.End_ExpansionNet_v2 import (
+    End_ExpansionNet_v2,
+    End_ExpansionNet_v2_Encoder,
+    End_ExpansionNet_v2_Decoder,
+    E2E_ExpansionNet_Captioner,
+)
+from utils.quantization_utils import (
+    print_size_of_model,
+    quantize_encoder_decoder,
+    prepare_model,
+    quantize_model,
+)
 from torch.ao.quantization import get_default_qconfig
 from torch.ao.quantization.quantize_fx import prepare_fx, convert_fx
 from torch.ao.quantization import get_default_qconfig_mapping, QConfigMapping
 import os
 
+
 def evaluate_quantized_model(
-    encoder, 
+    encoder,
     decoder,
     y_idx2word_list,
     beam_size,
@@ -45,18 +56,22 @@ def evaluate_quantized_model(
     encoder.eval()
     decoder.eval()
     beam_search_kwargs = {
-                "beam_size": beam_size,
-                "beam_max_seq_len": max_seq_len,
-                "sample_or_max": "max",
-                "how_many_outputs": 1,
-                "sos_idx": sos_idx,
-                "eos_idx": eos_idx,
-            }
+        "beam_size": beam_size,
+        "beam_max_seq_len": max_seq_len,
+        "sample_or_max": "max",
+        "how_many_outputs": 1,
+        "sos_idx": sos_idx,
+        "eos_idx": eos_idx,
+    }
 
-    captioner = E2E_ExpansionNet_Captioner(beam_search_kwargs, split_encoder=True, encoder=encoder,
-                                               decoder=decoder, rank=rank)
+    captioner = E2E_ExpansionNet_Captioner(
+        beam_search_kwargs,
+        split_encoder=True,
+        encoder=encoder,
+        decoder=decoder,
+        rank=rank,
+    )
     with torch.no_grad():
-
         num_iter_sub_batches = math.ceil(len(indexes) / batch_size)
         sb_size = batch_size
         for sb_it in tqdm(range(num_iter_sub_batches)):
@@ -91,7 +106,6 @@ def evaluate_quantized_model(
                 data_loader.get_captions_by_idx(i, dataset_split=dataset_split)
                 for i in list(range(from_idx, to_idx))
             ]
-
 
             output_words, _ = captioner(
                 enc_x=sub_batch_x,
@@ -157,6 +171,8 @@ def evaluate_quantized_model(
         return pred_dict, gts_dict
 
     return None, None
+
+
 def evaluate_quantized_model_on_set(
     encoder,
     decoder,
@@ -178,29 +194,30 @@ def evaluate_quantized_model_on_set(
     with torch.no_grad():
         encoder.eval()
         decoder.eval
-        
+
         pred_dict, gts_dict = evaluate_quantized_model(
-                encoder,
-                decoder,
-                y_idx2word_list=caption_idx2word_list,
-                beam_size=beam_size,
-                max_seq_len=eval_max_len,
-                sos_idx=sos_idx,
-                eos_idx=eos_idx,
-                rank=rank,
-                batch_size=batch_size,
-                indexes=list(range(num_samples)),
-                data_loader=data_loader,
-                dataset_split=dataset_split,
-                use_images_instead_of_features=use_images_instead_of_features,
-                verbose=True,
-                stanford_model_path=stanford_model_path,
-            )
+            encoder,
+            decoder,
+            y_idx2word_list=caption_idx2word_list,
+            beam_size=beam_size,
+            max_seq_len=eval_max_len,
+            sos_idx=sos_idx,
+            eos_idx=eos_idx,
+            rank=rank,
+            batch_size=batch_size,
+            indexes=list(range(num_samples)),
+            data_loader=data_loader,
+            dataset_split=dataset_split,
+            use_images_instead_of_features=use_images_instead_of_features,
+            verbose=True,
+            stanford_model_path=stanford_model_path,
+        )
 
     if get_predictions:
         return pred_dict, gts_dict
- 
+
     return None, None
+
 
 def main():
     parser = argparse.ArgumentParser("ExpansionNet Quantization Testing")
@@ -258,7 +275,6 @@ def main():
             vizwiz_annotations_dir="/usr0/home/nvaikunt/On_Device_Image_Captioning/VizWizData/annotations",
         )
 
-
     encoder_model = End_ExpansionNet_v2_Encoder(
         swin_img_size=args.img_size,
         swin_patch_size=4,
@@ -306,21 +322,21 @@ def main():
         rank="cpu",
     )
 
-
     # Get quantized model structures
     model_type = args.encoder_load_path.split("/")[-1].split("_")[0]
     if model_type == "static":
         static_qconfig_str = "x86"
         qconfig_mapping = get_default_qconfig_mapping(static_qconfig_str)
     else:
- 
-        qconfig_mapping = QConfigMapping().set_global(torch.ao.quantization.default_dynamic_qconfig)
-    
+        qconfig_mapping = QConfigMapping().set_global(
+            torch.ao.quantization.default_dynamic_qconfig
+        )
+
     example_input = (
-        torch.randn(1, 3, args.img_size, args.img_size), 
+        torch.randn(1, 3, args.img_size, args.img_size),
         torch.randint(1, 100, (1, 15)),
         [0],
-        [0]
+        [0],
     )
     prepared_encoder = prepare_model(encoder_model, example_input, qconfig_mapping)
     prepared_decoder = prepare_model(decoder_model, example_input, qconfig_mapping)
@@ -331,18 +347,19 @@ def main():
     decoder_model.load_state_dict(torch.load(args.decoder_load_path))
     print("Decoder loaded ...")
 
-
     image_folder = args.image_folder
     array_of_init_seeds = [random.random() for _ in range(1 * 2)]
-    data_loader = VizWizDataLoader(vizwiz_dataset=dataset,
-                                   batch_size=4,
-                                   num_procs=1,
-                                   array_of_init_seeds=array_of_init_seeds,
-                                   dataloader_mode='caption_wise',
-                                   resize_image_size=args.img_size,
-                                   rank=args.device,
-                                   image_folder=image_folder,
-                                   verbose=True)
+    data_loader = VizWizDataLoader(
+        vizwiz_dataset=dataset,
+        batch_size=4,
+        num_procs=1,
+        array_of_init_seeds=array_of_init_seeds,
+        dataloader_mode="caption_wise",
+        resize_image_size=args.img_size,
+        rank=args.device,
+        image_folder=image_folder,
+        verbose=True,
+    )
     model_max_len = dataset.max_seq_len + 20
     print("DataLoader initialized ...")
     evaluate_quantized_model_on_set(
@@ -357,7 +374,7 @@ def main():
         model_max_len,
         args.device,
         batch_size=args.batch_size,
-        beam_size=args.beam_size
+        beam_size=args.beam_size,
     )
 
 

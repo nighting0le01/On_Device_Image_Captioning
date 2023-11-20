@@ -454,7 +454,12 @@ def test(
         checkpoint = torch.load(save_model_path, map_location=map_location)
         if model_args.load_pruned:
             print("Loading pruned weights ...")
-            model.load_state_dict({k:(v if v.layout == torch.strided else v.to_dense()) for k,v in checkpoint.items()})
+            model.load_state_dict(
+                {
+                    k: (v if v.layout == torch.strided else v.to_dense())
+                    for k, v in checkpoint.items()
+                }
+            )
         else:
             model.load_state_dict(checkpoint["model_state_dict"], strict=is_end_to_end)
     else:
@@ -578,7 +583,9 @@ if __name__ == "__main__":
     parser.add_argument("--eval_beam_sizes", type=str2list, default=[3])
     parser.add_argument("--image_folder", type=str, default="./data")
     parser.add_argument(
-        "--vocab_path", type=str, default="On_Device_Image_Captioning/vocab/coco_vocab_idx_dict.json"
+        "--vocab_path",
+        type=str,
+        default="On_Device_Image_Captioning/vocab/coco_vocab_idx_dict.json",
     )
     parser.add_argument(
         "--images_path", type=str, default="./github_ignore_material/raw_data/"
@@ -615,10 +622,10 @@ if __name__ == "__main__":
         "2 - Remove layer from Encoder and Decoder (Enc_deco_dec)",
     )
     parser.add_argument(
-        '--load_pruned',
-        action='store_true',
+        "--load_pruned",
+        action="store_true",
         default=False,
-        help='To load the sparsed pruned weights in the model'
+        help="To load the sparsed pruned weights in the model",
     )
 
     args = parser.parse_args()
@@ -644,14 +651,16 @@ if __name__ == "__main__":
         vizwiz=args.vizwiz,
         image_folder=args.image_folder,
         param_config=args.param_config,
-        load_pruned=args.load_pruned
+        load_pruned=args.load_pruned,
     )
 
     print(model_args.param_config)
 
     if args.vizwiz:
         if os.path.isfile(args.vocab_path):
-            with open("On_Device_Image_Captioning/vocab/coco_vocab_idx_dict.json", "r") as vocab_json:
+            with open(
+                "On_Device_Image_Captioning/vocab/coco_vocab_idx_dict.json", "r"
+            ) as vocab_json:
                 coco_vocab_idx_dict = json.load(vocab_json)
         else:
             coco_vocab_idx_dict = None

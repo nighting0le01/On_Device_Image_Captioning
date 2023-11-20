@@ -236,7 +236,10 @@ class VizWizDataLoader(TransparentDataLoader):
                 batch_caption_y_encoded, self.dataset.get_pad_token_idx()
             )
         batch_y = torch.tensor(batch_y)
-        if dataset_split == VizWizDataset.TestSet_ID or self.dataloader_mode != "caption_wise":
+        if (
+            dataset_split == VizWizDataset.TestSet_ID
+            or self.dataloader_mode != "caption_wise"
+        ):
             return batch_x, batch_x_num_pads
         else:
             return batch_x, batch_y, batch_x_num_pads, batch_y_num_pads

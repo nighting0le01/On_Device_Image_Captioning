@@ -21,7 +21,7 @@ from torch_tensorrt.fx import TRTModule
 from models.End_ExpansionNet_v2 import (
     End_ExpansionNet_v2_Encoder,
     End_ExpansionNet_v2_Decoder,
-    E2E_ExpansionNet_Captioner
+    E2E_ExpansionNet_Captioner,
 )
 
 from utils import language_utils
@@ -32,90 +32,109 @@ from utils.quantization_utils import (
     prepare_model,
     quantize_model,
     quantize_encoder_decoder,
-    print_size_of_model
+    print_size_of_model,
 )
 
-    
-def convert2TRT(encoder_model,decoder_model,
-                img_size, sos_idx, eos_idx, 
-                device,beam_search_arg_defaults,
-                dataset):
 
+def convert2TRT(
+    encoder_model,
+    decoder_model,
+    img_size,
+    sos_idx,
+    eos_idx,
+    device,
+    beam_search_arg_defaults,
+    dataset,
+):
     demo_image_path = "./demo_material/micheal.jpg"
     demo_image = preprocess_image(demo_image_path, img_size)
-    
-    
-    example_input = [(
-    torch.randn(1, 3, img_size, img_size), 
-    torch.randint(1, 100, (1, 15)),
-    [0],
-    [0])]
+
+    example_input = [
+        (
+            torch.randn(1, 3, img_size, img_size),
+            torch.randint(1, 100, (1, 15)),
+            [0],
+            [0],
+        )
+    ]
     acc_mod_encoder = acc_tracer.trace(encoder_model, example_input)
     acc_mod_decoder = acc_tracer.trace(decoder_model, example_input)
 
     inputs = [example_input]
     input_specs = InputTensorSpec.from_tensors(inputs)
     interpreter_encoder = TRTInterpreter(
-    acc_mod_encoder, input_specs, explicit_batch_dimension=True
+        acc_mod_encoder, input_specs, explicit_batch_dimension=True
     )
     interpreter_decoder = TRTInterpreter(
-    acc_mod_decoder, input_specs, explicit_batch_dimension=True
+        acc_mod_decoder, input_specs, explicit_batch_dimension=True
     )
     trt_interpreter_result_enc = interpreter_encoder.run(
-                            max_batch_size=1,
-                            max_workspace_size=1 << 25,
-                            sparse_weights=False,
-                            force_fp32_output=False,
-                            strict_type_constraints=False,
-                            algorithm_selector=None,
-                            timing_cache=None,
-                            profiling_verbosity=None,
-                        )
+        max_batch_size=1,
+        max_workspace_size=1 << 25,
+        sparse_weights=False,
+        force_fp32_output=False,
+        strict_type_constraints=False,
+        algorithm_selector=None,
+        timing_cache=None,
+        profiling_verbosity=None,
+    )
     trt_interpreter_result_dec = interpreter_decoder.run(
-                            max_batch_size=1,
-                            max_workspace_size=1 << 25,
-                            sparse_weights=False,
-                            force_fp32_output=False,
-                            strict_type_constraints=False,
-                            algorithm_selector=None,
-                            timing_cache=None,
-                            profiling_verbosity=None,
-                        )
-    
+        max_batch_size=1,
+        max_workspace_size=1 << 25,
+        sparse_weights=False,
+        force_fp32_output=False,
+        strict_type_constraints=False,
+        algorithm_selector=None,
+        timing_cache=None,
+        profiling_verbosity=None,
+    )
+
     mod_enc = TRTModule(
-            trt_interpreter_result_enc.engine,
-            trt_interpreter_result_enc.input_names,
-            trt_interpreter_result_enc.output_names)
+        trt_interpreter_result_enc.engine,
+        trt_interpreter_result_enc.input_names,
+        trt_interpreter_result_enc.output_names,
+    )
     mod_dec = TRTModule(
-            trt_interpreter_result_dec.engine,
-            trt_interpreter_result_dec.input_names,
-            trt_interpreter_result_dec.output_names)
+        trt_interpreter_result_dec.engine,
+        trt_interpreter_result_dec.input_names,
+        trt_interpreter_result_dec.output_names,
+    )
     # Just like all other PyTorch modules
-    inputs = [(
-    torch.randn(1, 3, img_size, img_size), 
-    torch.randint(1, 100, (1, 15)),
-    [0],
-    [0])]
-    
+    inputs = [
+        (
+            torch.randn(1, 3, img_size, img_size),
+            torch.randint(1, 100, (1, 15)),
+            [0],
+            [0],
+        )
+    ]
+
     # outputs_enc = mod_enc(*inputs)
     # torch.save(mod_enc, "mod_enc_trt.pt")
     # reload_trt_mod_enc = torch.load("mod_enc_trt.pt")
     # reload_model_output_enc = reload_trt_mod_enc(*inputs)
-    
+
     # outputs_dec = mod_dec(*inputs)
     # torch.save(mod_dec, "mod_dec_trt.pt")
     # reload_trt_mod_dec = torch.load("mod_dec_trt.pt")
     # reload_model_output_dec = reload_trt_mod_dec(*inputs)
-    
-    captioner = E2E_ExpansionNet_Captioner(beam_search_arg_defaults, split_encoder=True, encoder=mod_enc,
-                                            decoder=mod_dec, rank=device)
+
+    captioner = E2E_ExpansionNet_Captioner(
+        beam_search_arg_defaults,
+        split_encoder=True,
+        encoder=mod_enc,
+        decoder=mod_dec,
+        rank=device,
+    )
     with torch.no_grad():
-        pred, _ = captioner(enc_x=demo_image.to(device),
-                            enc_x_num_pads=[0], mode="beam_search")
+        pred, _ = captioner(
+            enc_x=demo_image.to(device), enc_x_num_pads=[0], mode="beam_search"
+        )
 
-    pred = tokens2description(pred[0][0], dataset.caption_idx2word_list, sos_idx, eos_idx)
-    print(' \n\tDescription: ' + pred + '\n')
-
+    pred = tokens2description(
+        pred[0][0], dataset.caption_idx2word_list, sos_idx, eos_idx
+    )
+    print(" \n\tDescription: " + pred + "\n")
 
 
 def main():
@@ -174,7 +193,6 @@ def main():
             vizwiz_annotations_dir="/usr0/home/nvaikunt/On_Device_Image_Captioning/VizWizData/annotations",
         )
 
-
     encoder_model = End_ExpansionNet_v2_Encoder(
         swin_img_size=args.img_size,
         swin_patch_size=4,
@@ -222,21 +240,21 @@ def main():
         rank="cpu",
     )
 
-
     # Get quantized model structures
     model_type = args.encoder_load_path.split("/")[-1].split("_")[0]
     if model_type == "static":
         static_qconfig_str = "x86"
         qconfig_mapping = get_default_qconfig_mapping(static_qconfig_str)
     else:
- 
-        qconfig_mapping = QConfigMapping().set_global(torch.ao.quantization.default_dynamic_qconfig)
-    
+        qconfig_mapping = QConfigMapping().set_global(
+            torch.ao.quantization.default_dynamic_qconfig
+        )
+
     example_input = (
-        torch.randn(1, 3, args.img_size, args.img_size), 
+        torch.randn(1, 3, args.img_size, args.img_size),
         torch.randint(1, 100, (1, 15)),
         [0],
-        [0]
+        [0],
     )
     prepared_encoder = prepare_model(encoder_model, example_input, qconfig_mapping)
     prepared_decoder = prepare_model(decoder_model, example_input, qconfig_mapping)
@@ -247,33 +265,40 @@ def main():
     decoder_model.load_state_dict(torch.load(args.decoder_load_path))
     print("Decoder loaded ...")
 
-
     image_folder = args.image_folder
     array_of_init_seeds = [random.random() for _ in range(1 * 2)]
-    data_loader = VizWizDataLoader(vizwiz_dataset=dataset,
-                                   batch_size=4,
-                                   num_procs=1,
-                                   array_of_init_seeds=array_of_init_seeds,
-                                   dataloader_mode='caption_wise',
-                                   resize_image_size=args.img_size,
-                                   rank=args.device,
-                                   image_folder=image_folder,
-                                   verbose=True)
+    data_loader = VizWizDataLoader(
+        vizwiz_dataset=dataset,
+        batch_size=4,
+        num_procs=1,
+        array_of_init_seeds=array_of_init_seeds,
+        dataloader_mode="caption_wise",
+        resize_image_size=args.img_size,
+        rank=args.device,
+        image_folder=image_folder,
+        verbose=True,
+    )
     model_max_len = dataset.max_seq_len + 20
     print("DataLoader initialized ...")
-    beam_search_arg_defaults = {'sos_idx': dataset.get_sos_token_idx(),
-                                'eos_idx': dataset.get_eos_token_idx(),
-                                'beam_size': 5,
-                                'beam_max_seq_len': model_max_len,
-                                'sample_or_max': 'max',
-                                'how_many_outputs': 1, }
-    convert2TRT(encoder_model=encoder_model,decoder_model=decoder_model,
-                img_size=args.img_size,sos_idx=dataset.get_sos_token_idx(), 
-                eos_idx=dataset.get_eos_token_idx(), device=args.device,beam_search_arg_defaults =beam_search_arg_defaults,dataset = dataset)
+    beam_search_arg_defaults = {
+        "sos_idx": dataset.get_sos_token_idx(),
+        "eos_idx": dataset.get_eos_token_idx(),
+        "beam_size": 5,
+        "beam_max_seq_len": model_max_len,
+        "sample_or_max": "max",
+        "how_many_outputs": 1,
+    }
+    convert2TRT(
+        encoder_model=encoder_model,
+        decoder_model=decoder_model,
+        img_size=args.img_size,
+        sos_idx=dataset.get_sos_token_idx(),
+        eos_idx=dataset.get_eos_token_idx(),
+        device=args.device,
+        beam_search_arg_defaults=beam_search_arg_defaults,
+        dataset=dataset,
+    )
 
 
 if __name__ == "__main__":
     main()
-
-    
-    

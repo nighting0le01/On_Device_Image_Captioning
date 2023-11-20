@@ -16,11 +16,21 @@ from torch.ao.quantization.quantize_fx import prepare_fx, convert_fx
 from torch.ao.quantization import get_default_qconfig_mapping, QConfigMapping
 
 sys.path.append("/home/arpitsah/Desktop/Fall-2023/odml/On_Device_Image_Captioning")
-from models.End_ExpansionNet_v2 import End_ExpansionNet_v2, End_ExpansionNet_v2_Encoder, End_ExpansionNet_v2_Decoder, E2E_ExpansionNet_Captioner
+from models.End_ExpansionNet_v2 import (
+    End_ExpansionNet_v2,
+    End_ExpansionNet_v2_Encoder,
+    End_ExpansionNet_v2_Decoder,
+    E2E_ExpansionNet_Captioner,
+)
 
 from utils.image_utils import preprocess_image
 from utils.language_utils import tokens2description
-from utils.quantization_utils import print_size_of_model, quantize_encoder_decoder, prepare_model, quantize_model
+from utils.quantization_utils import (
+    print_size_of_model,
+    quantize_encoder_decoder,
+    prepare_model,
+    quantize_model,
+)
 
 
 # from fvcore.nn import FlopCountAnalysis, flop_count_table, flop_count_str
@@ -34,26 +44,30 @@ def compute_FLOPS(encoder, decoder, img_size, sos_idx, eos_idx, beam_size, max_s
     ## To try DeepSpeed as its better supported:https://www.deepspeed.ai/tutorials/flops-profiler/#example-bert
 
     """
-  
+
     class Wrapper(nn.Module):
         def forward(self, inputs):
-            return self.captioner(enc_x=inputs,
-                                enc_x_num_pads=[0], mode="beam_search")
+            return self.captioner(enc_x=inputs, enc_x_num_pads=[0], mode="beam_search")
 
     input_data = torch.randn(1, 3, img_size, img_size)
     encoder.eval()
     decoder.eval()
     model_wrapped = Wrapper()
     beam_search_kwargs = {
-                "beam_size": beam_size,
-                "beam_max_seq_len": max_seq_len,
-                "sample_or_max": "max",
-                "how_many_outputs": 1,
-                "sos_idx": sos_idx,
-                "eos_idx": eos_idx,
-            }
-    model_wrapped.captioner = E2E_ExpansionNet_Captioner(beam_search_kwargs, split_encoder=True, encoder=encoder,
-                                               decoder=decoder, rank="cpu")
+        "beam_size": beam_size,
+        "beam_max_seq_len": max_seq_len,
+        "sample_or_max": "max",
+        "how_many_outputs": 1,
+        "sos_idx": sos_idx,
+        "eos_idx": eos_idx,
+    }
+    model_wrapped.captioner = E2E_ExpansionNet_Captioner(
+        beam_search_kwargs,
+        split_encoder=True,
+        encoder=encoder,
+        decoder=decoder,
+        rank="cpu",
+    )
     # input = torch.randn(1, 3, 224, 224)
     flops, params = profile(model_wrapped, inputs=(input_data,))
     print(flops)
@@ -70,7 +84,7 @@ def compute_parameters(model):
 
 
 def compute_inference_Latency(
-    encoder, 
+    encoder,
     decoder,
     num_runs,
     img_size,
@@ -86,22 +100,28 @@ def compute_inference_Latency(
     inference_times = []
     runs = num_runs
     beam_search_kwargs = {
-            "beam_size": beam_size,
-            "beam_max_seq_len": max_seq_len,
-            "sample_or_max": "max",
-            "how_many_outputs": 1,
-            "sos_idx": sos_idx,
-            "eos_idx": eos_idx,
-        }
-    captioner = E2E_ExpansionNet_Captioner(beam_search_kwargs, split_encoder=True, encoder=encoder,
-                                               decoder=decoder, rank="cuda")
+        "beam_size": beam_size,
+        "beam_max_seq_len": max_seq_len,
+        "sample_or_max": "max",
+        "how_many_outputs": 1,
+        "sos_idx": sos_idx,
+        "eos_idx": eos_idx,
+    }
+    captioner = E2E_ExpansionNet_Captioner(
+        beam_search_kwargs,
+        split_encoder=True,
+        encoder=encoder,
+        decoder=decoder,
+        rank="cuda",
+    )
     for run in range(runs):
         input_data = torch.randn(1, 3, img_size, img_size).to("cuda")
-        
+
         t0 = time.perf_counter()
         with torch.no_grad():
-            pred, _ = captioner(enc_x=input_data,
-                                enc_x_num_pads=[0], mode="beam_search")
+            pred, _ = captioner(
+                enc_x=input_data, enc_x_num_pads=[0], mode="beam_search"
+            )
         end_time = time.perf_counter()
         pred = tokens2description(
             pred[0][0], coco_tokens["idx2word_list"], sos_idx, eos_idx
@@ -268,13 +288,15 @@ def main():
         qconfig_mapping = get_default_qconfig_mapping(static_qconfig_str)
     else:
         static = False
-        qconfig_mapping = QConfigMapping().set_global(torch.ao.quantization.default_dynamic_qconfig)
-    
+        qconfig_mapping = QConfigMapping().set_global(
+            torch.ao.quantization.default_dynamic_qconfig
+        )
+
     example_input = (
-        torch.randn(1, 3, args.img_size, args.img_size), 
+        torch.randn(1, 3, args.img_size, args.img_size),
         torch.randint(1, 100, (1, 15)),
         [0],
-        [0]
+        [0],
     )
     prepared_encoder = prepare_model(encoder_model, example_input, qconfig_mapping)
     prepared_decoder = prepare_model(decoder_model, example_input, qconfig_mapping)
@@ -295,14 +317,12 @@ def main():
 
         print("Printing Model Sizes on Disk")
         print_size_of_model(encoder_model)
-        print_size_of_model(decoder_model)        
-
-
+        print_size_of_model(decoder_model)
 
     if args.compute_FLOPS:
         print("Computing FLOPS")
         compute_FLOPS(
-            encoder_model, 
+            encoder_model,
             decoder_model,
             args.img_size,
             sos_idx=sos_idx,
@@ -314,8 +334,8 @@ def main():
     if args.compute_inference_time:
         print("Computing Average Inference Time")
         compute_inference_Latency(
-            encoder_model, 
-            decoder_model, 
+            encoder_model,
+            decoder_model,
             num_runs=100,
             img_size=args.img_size,
             coco_tokens=coco_tokens,
