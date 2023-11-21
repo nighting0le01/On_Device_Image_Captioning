@@ -585,12 +585,12 @@ if __name__ == "__main__":
     parser.add_argument(
         "--save_model_path",
         type=str,
-        default="./pretrained_weights/base/4_th.pth",
+        default="/home/arpitsah/Desktop/Fall-2023/odml/On_Device_Image_Captioning/pretrained_weights/4_th.pth",
     )
 
     parser.add_argument("--eval_parallel_batch_size", type=int, default=16)
     parser.add_argument("--eval_beam_sizes", type=str2list, default=[3])
-    parser.add_argument("--image_folder", type=str, default="./data")
+    parser.add_argument("--image_folder", type=str, default="/home/arpitsah/Desktop/Fall-2023/odml/On_Device_Image_Captioning/vizWiz")
     parser.add_argument(
         "--vocab_path",
         type=str,
@@ -607,13 +607,13 @@ if __name__ == "__main__":
         "--captions_path", type=str, default="./github_ignore_material/raw_data/"
     )
     parser.add_argument(
-        "--structured_prune", action="store_true", default=False, help="Structured Pruning and Stats"
+        "--structured_prune", action="store_true", default=True, help="Structured Pruning and Stats"
     )
     parser.add_argument(
         "--prune_pct", type=float, default=.334
     )
     parser.add_argument(
-        "--prune_only", type=int, default=None
+        "--prune_only", type=int, default=3
     )
     # parser.add_argument('--pretrain_checkpoint', type=str, default="/home/arpitsah/Desktop/Fall-2023/odml/On_Device_Image_Captioning/pretrained_weightscheckpoint_2023-10-12-13:36:34_epoch4it1968bs8_xe_.pth")
     parser.add_argument("--vizwiz", type=str2bool, default=True)
@@ -624,7 +624,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--save_path",
         type=str,
-        default="/usr0/home/nvaikunt/On_Device_Image_Captioning/pretrained_weights",
+        default="/home/arpitsah/Desktop/Fall-2023/odml/On_Device_Image_Captioning/pretrained_weights",
     )  # default='./github_ignore_material/saves/')
     parser.add_argument("--save_every_minutes", type=int, default=25)
     parser.add_argument("--how_many_checkpoints", type=int, default=1)

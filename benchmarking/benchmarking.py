@@ -13,7 +13,7 @@ import sys
 from copy import deepcopy
 import torch.nn.utils.prune as prune
 
-sys.path.append("/usr0/home/nvaikunt/On_Device_Image_Captioning")
+sys.path.append("/home/arpitsah/Desktop/Fall-2023/odml/On_Device_Image_Captioning")
 print(sys.path)
 from legacy_models.End_ExpansionNet_v2 import End_ExpansionNet_v2
 from utils.image_utils import preprocess_image
@@ -264,16 +264,16 @@ def main():
         help="To Compute parameters",
     )
     parser.add_argument(
-        "--prune", action="store_true", default=False, help="To Prune the model"
+        "--prune", action="store_true", default=True, help="To Prune the model"
     )
     parser.add_argument(
-        "--structured_prune", action="store_true", default=False, help="Structured Pruning and Stats"
+        "--structured_prune", action="store_true", default=True, help="Structured Pruning and Stats"
     )
     parser.add_argument(
         "--prune_pct", type=float, default=.334
     )
     parser.add_argument(
-        "--prune_only", type=int, default=None
+        "--prune_only", type=int, default=1
     )
     parser.add_argument(
         "--prune_count", type=int, default=1, help="No. of times to prune the model"
@@ -302,7 +302,7 @@ def main():
     parser.add_argument(
         "--load_path",
         type=str,
-        default="On_Device_Image_Captioning/pretrained_weights/base/4_th.pth",
+        default="/home/arpitsah/Desktop/Fall-2023/odml/On_Device_Image_Captioning/pretrained_weights/4_th.pth",
     )
     parser.add_argument(
         "--image_paths",
@@ -321,7 +321,7 @@ def main():
         type=str,
         default="On_Device_Image_Captioning/benchmarking/plots",
     )
-    parser.add_argument("--device", type=str, default="cuda:0")
+    parser.add_argument("--device", type=str, default="cpu")
     args = parser.parse_args()
     torch.manual_seed(args.seed)
 
