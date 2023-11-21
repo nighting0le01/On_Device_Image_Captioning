@@ -154,7 +154,7 @@ def evaluate_model(
     dataset_split=CocoDatasetKarpathy.TrainSet_ID,
     use_images_instead_of_features=False,
     verbose=True,
-    stanford_model_path="On_Device_Image_Captioning/eval/get_stanford_models.sh",
+    stanford_model_path="./eval/get_stanford_models.sh",
 ):
     start_time = time()
 
@@ -289,7 +289,7 @@ def evaluate_model_on_set(
     ddp_sync_port,
     parallel_batches=16,
     beam_sizes=[1],
-    stanford_model_path="On_Device_Image_Captioning/eval/get_stanford_models.sh",
+    stanford_model_path="./eval/get_stanford_models.sh",
     use_images_instead_of_features=False,
     get_predictions=False,
     is_vizwiz=False,
@@ -463,7 +463,8 @@ def test(
             )
         elif model_args.structured_prune:
             checkpoint = torch.load(save_model_path)
-            pruned_param_dict, _ = structured_head_pruning(checkpoint["model_state_dict"], prune_pct=(1/3))
+            pruned_param_dict, _ = structured_head_pruning(checkpoint["model_state_dict"], 
+                                                           prune_pct=model_args.prune_pct, prune_only=model_args.prune_only)
             model.to("cpu")
             print("Loading structurally pruned weights ...")
             model.load_state_dict(pruned_param_dict)
@@ -608,6 +609,12 @@ if __name__ == "__main__":
     parser.add_argument(
         "--structured_prune", action="store_true", default=False, help="Structured Pruning and Stats"
     )
+    parser.add_argument(
+        "--prune_pct", type=float, default=.334
+    )
+    parser.add_argument(
+        "--prune_only", type=int, default=None
+    )
     # parser.add_argument('--pretrain_checkpoint', type=str, default="/home/arpitsah/Desktop/Fall-2023/odml/On_Device_Image_Captioning/pretrained_weightscheckpoint_2023-10-12-13:36:34_epoch4it1968bs8_xe_.pth")
     parser.add_argument("--vizwiz", type=str2bool, default=True)
     parser.add_argument("--batch_size", type=int, default=8)
@@ -663,7 +670,9 @@ if __name__ == "__main__":
         image_folder=args.image_folder,
         param_config=args.param_config,
         load_pruned=args.load_pruned,
-        structured_prune=args.structured_prune
+        structured_prune=args.structured_prune, 
+        prune_pct=args.prune_pct,
+        prune_only=args.prune_only
     )
     
 
