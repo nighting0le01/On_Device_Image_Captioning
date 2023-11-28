@@ -9,6 +9,7 @@ import numpy as np
 import torch
 import torch.distributed as dist
 import torch.multiprocessing as mp
+import torch.nn.functional as F
 import torch.optim as optim
 from torch.ao.quantization import (
     QConfigMapping,
@@ -101,6 +102,7 @@ def train(
     saving_timer_start = time()
     time_to_save = False
     running_loss = 0
+    running_teacher_loss = None
     running_time = 0
     already_trained_steps = (
         data_loader.get_num_batches() * data_loader.get_epoch_it()
@@ -118,6 +120,8 @@ def train(
     if train_args.quantized:
         if train_args.kd:
             ddp_encoder, ddp_decoder, ddp_teacher = ddp_model
+            if train_args.phase_2: 
+                    running_teacher_loss = 0
 
         ddp_encoder, ddp_decoder = ddp_model
 
@@ -170,12 +174,23 @@ def train(
                 )
 
                 if train_args.kd:
+                    kd_loss_fn = torch.nn.KLDivLoss(log_target=True)
+                    log_softmax = torch.nn.LogSoftmax(dim=-1)
                     teacher_logprobs = ddp_teacher(
                         enc_x=batch_input_x,
                         dec_x=batch_target_y[:, :-1],
                         enc_x_num_pads=batch_input_x_num_pads,
                         dec_x_num_pads=batch_target_y_num_pads,
                     )
+                    kd_loss_student = kd_loss_fn(log_softmax(pred_logprobs), log_softmax(teacher_logprobs))
+                    if train_args.phase_2:
+                        ce_teacher_loss = loss_function(teacher_logprobs, batch_target_y[:, 1:],
+                                                         dataset.get_pad_token_idx())
+                        kd_teacher_loss = kd_loss_fn(log_softmax(teacher_logprobs), log_softmax(pred_logprobs))
+                        teacher_loss = ce_teacher_loss + kd_teacher_loss
+                        teacher_loss.backward()
+                        running_teacher_loss += teacher_loss.item()
+
 
             else:
                 pred_logprobs = ddp_model(
@@ -188,8 +203,11 @@ def train(
             loss = loss_function(
                 pred_logprobs, batch_target_y[:, 1:], dataset.get_pad_token_idx()
             )
+            if train_args.kd:
+                loss += kd_loss_student
             # print(f"LOSS IS {loss}")
             running_loss += loss.item()
+
             loss.backward()
         else:  # rf mode
             (
@@ -265,6 +283,10 @@ def train(
         if (it + 1) % train_args.print_every_iter == 0:
             if not train_args.reinforce:
                 avg_loss = running_loss / (it + 1 - prev_print_iter)
+                if train_args.phase_2: 
+                    avg_teacher_loss = running_teacher_loss / (it + 1 - prev_print_iter)
+                else: 
+                    avg_teacher_loss = 0
                 tot_elapsed_time = time() - algorithm_start_time
                 avg_time_time_per_iter = running_time / (it + 1 - prev_print_iter)
                 print(
@@ -280,12 +302,16 @@ def train(
                     + str(train_args.num_accum)
                     + " avg loss: "
                     + str(round(avg_loss, 3))
+                    + "avg teacher loss: "
+                    + str(round(avg_teacher_loss, 3))
                     + " elapsed: "
                     + convert_time_as_hhmmss(tot_elapsed_time)
                     + " sec/iter: "
                     + str(round(avg_time_time_per_iter, 3))
                 )
                 running_loss = 0
+                if train_args.phase_2: 
+                    running_teacher_loss = 0
                 running_time = 0
                 prev_print_iter = it + 1
             else:
