@@ -74,7 +74,7 @@ def compute_inference_Latency(
     beam_size,
     max_seq_len,
     plots_path,
-    device
+    device,
 ):
     model = model.to(device)
     model.eval()
@@ -185,7 +185,7 @@ def main():
         type=str,
         default="On_Device_Image_Captioning/benchmarking/plots",
     )
-    parser.add_argument('--device', type=str, default='cuda:0')
+    parser.add_argument("--device", type=str, default="cuda:0")
     args = parser.parse_args()
     torch.manual_seed(args.seed)
 
@@ -260,9 +260,18 @@ def main():
     if args.compute_inference_time:
         print("Computing Average Inference Time")
         print(model)
-        compute_inference_Latency(model=model,num_runs=100,img_size=args.img_size,coco_tokens=coco_tokens,
-                                  sos_idx=sos_idx,eos_idx=eos_idx,
-                                  beam_size=args.beam_size,max_seq_len= args.max_seq_len,plots_path=args.plots_path, device=args.device )
+        compute_inference_Latency(
+            model=model,
+            num_runs=100,
+            img_size=args.img_size,
+            coco_tokens=coco_tokens,
+            sos_idx=sos_idx,
+            eos_idx=eos_idx,
+            beam_size=args.beam_size,
+            max_seq_len=args.max_seq_len,
+            plots_path=args.plots_path,
+            device=args.device,
+        )
         return
 
 

@@ -17,7 +17,7 @@ from data.vizwiz_dataloader import VizWizDataLoader
 from models.End_ExpansionNet_v2 import (
     End_ExpansionNet_v2_Encoder,
     End_ExpansionNet_v2_Decoder,
-    E2E_ExpansionNet_Captioner
+    E2E_ExpansionNet_Captioner,
 )
 
 from utils import language_utils
@@ -28,7 +28,7 @@ from utils.quantization_utils import (
     prepare_model,
     quantize_model,
     quantize_encoder_decoder,
-    print_size_of_model
+    print_size_of_model,
 )
 
 encoder_modules = [
@@ -122,23 +122,31 @@ def load_models(
     )
 
     return encoder_model, decoder_model
-def demo_quantized_model(encoder, decoder, sos_idx, eos_idx, device="cpu"): 
-       
-        demo_image_path = "./demo_material/micheal.jpg"
-        demo_image = preprocess_image(demo_image_path, img_size)
 
-        encoder.to(device)
-        decoder.to(device)
 
-        captioner = E2E_ExpansionNet_Captioner(beam_search_arg_defaults, split_encoder=True, encoder=encoder,
-                                               decoder=decoder, rank=device)
-        with torch.no_grad():
-            pred, _ = captioner(enc_x=demo_image.to(device),
-                                enc_x_num_pads=[0], mode="beam_search")
-   
-        pred = tokens2description(pred[0][0], dataset.caption_idx2word_list, sos_idx, eos_idx)
-        print(' \n\tDescription: ' + pred + '\n')
+def demo_quantized_model(encoder, decoder, sos_idx, eos_idx, device="cpu"):
+    demo_image_path = "./demo_material/micheal.jpg"
+    demo_image = preprocess_image(demo_image_path, img_size)
 
+    encoder.to(device)
+    decoder.to(device)
+
+    captioner = E2E_ExpansionNet_Captioner(
+        beam_search_arg_defaults,
+        split_encoder=True,
+        encoder=encoder,
+        decoder=decoder,
+        rank=device,
+    )
+    with torch.no_grad():
+        pred, _ = captioner(
+            enc_x=demo_image.to(device), enc_x_num_pads=[0], mode="beam_search"
+        )
+
+    pred = tokens2description(
+        pred[0][0], dataset.caption_idx2word_list, sos_idx, eos_idx
+    )
+    print(" \n\tDescription: " + pred + "\n")
 
 
 if __name__ == "__main__":
@@ -226,14 +234,17 @@ if __name__ == "__main__":
     img_size = 384
     # device = "cpu"
     device = args.device
-    beam_search_arg_defaults = {'sos_idx': dataset.get_sos_token_idx(),
-                                'eos_idx': dataset.get_eos_token_idx(),
-                                'beam_size': 5,
-                                'beam_max_seq_len': model_max_len,
-                                'sample_or_max': 'max',
-                                'how_many_outputs': 1, }
-    encoder_model, decoder_model = load_models(model_args, dataset,
-                                              model_max_len, img_size=img_size, device=device)
+    beam_search_arg_defaults = {
+        "sos_idx": dataset.get_sos_token_idx(),
+        "eos_idx": dataset.get_eos_token_idx(),
+        "beam_size": 5,
+        "beam_max_seq_len": model_max_len,
+        "sample_or_max": "max",
+        "how_many_outputs": 1,
+    }
+    encoder_model, decoder_model = load_models(
+        model_args, dataset, model_max_len, img_size=img_size, device=device
+    )
 
     encoder_state_dict = filter_state_dict(state_dict, encoder_modules)
     decoder_state_dict = filter_state_dict(state_dict, decoder_modules)
@@ -244,42 +255,59 @@ if __name__ == "__main__":
     decoder_model.to(device)
     image_folder = args.image_folder
     array_of_init_seeds = [random.random() for _ in range(1 * 2)]
-    data_loader = VizWizDataLoader(vizwiz_dataset=dataset,
-                                   batch_size=4,
-                                   num_procs=1,
-                                   array_of_init_seeds=array_of_init_seeds,
-                                   dataloader_mode='caption_wise',
-                                   resize_image_size=img_size,
-                                   rank=device,
-                                   image_folder=image_folder,
-                                   verbose=True)
+    data_loader = VizWizDataLoader(
+        vizwiz_dataset=dataset,
+        batch_size=4,
+        num_procs=1,
+        array_of_init_seeds=array_of_init_seeds,
+        dataloader_mode="caption_wise",
+        resize_image_size=img_size,
+        rank=device,
+        image_folder=image_folder,
+        verbose=True,
+    )
     if quant_args.static:
         static_qconfig_str = quant_args.static_qconfig_str
         qconfig_mapping = get_default_qconfig_mapping(static_qconfig_str)
     else:
-        qconfig_mapping = QConfigMapping().set_global(torch.ao.quantization.default_dynamic_qconfig)
+        qconfig_mapping = QConfigMapping().set_global(
+            torch.ao.quantization.default_dynamic_qconfig
+        )
 
-    quantized_encoder, quantized_decoder = quantize_encoder_decoder(encoder_model, decoder_model,
-                                                                    data_loader, 3, qconfig_mapping, device,
-                                                                    static=quant_args.static)
-    # Save models 
+    quantized_encoder, quantized_decoder = quantize_encoder_decoder(
+        encoder_model,
+        decoder_model,
+        data_loader,
+        3,
+        qconfig_mapping,
+        device,
+        static=quant_args.static,
+    )
+    # Save models
     orig_file_name = ckpt_path.split("/")[-1]
-    if args.static: 
+    if args.static:
         model_type = "static"
-    else: 
+    else:
         model_type = "dynamic"
     encoder_save_file = f"{model_type}_quantized_encoder_{orig_file_name}"
     decoder_save_file = f"{model_type}_quantized_decoder_{orig_file_name}"
-    torch.save(quantized_encoder.state_dict(), os.path.join(args.save_path, encoder_save_file))
-    torch.save(quantized_decoder.state_dict(), os.path.join(args.save_path, decoder_save_file))
+    torch.save(
+        quantized_encoder.state_dict(), os.path.join(args.save_path, encoder_save_file)
+    )
+    torch.save(
+        quantized_decoder.state_dict(), os.path.join(args.save_path, decoder_save_file)
+    )
 
     # Print Info
     print_size_of_model(encoder_model)
     print_size_of_model(decoder_model)
     print_size_of_model(quantized_encoder)
     print_size_of_model(quantized_decoder)
-                                                                     
-    if args.demo:
-        demo_quantized_model(quantized_encoder, quantized_decoder,
-                             sos_idx=dataset.get_sos_token_idx(), eos_idx=dataset.get_eos_token_idx())
 
+    if args.demo:
+        demo_quantized_model(
+            quantized_encoder,
+            quantized_decoder,
+            sos_idx=dataset.get_sos_token_idx(),
+            eos_idx=dataset.get_eos_token_idx(),
+        )

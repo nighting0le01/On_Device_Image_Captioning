@@ -46,7 +46,7 @@ class Captioner:
         apply_log_softmax=False,
         encoder=None,
         decoder=None,
-        train=False
+        train=False,
     ):
         self.rank = None
         self.split_encoder = split_encoder

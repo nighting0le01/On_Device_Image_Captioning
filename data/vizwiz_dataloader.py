@@ -127,7 +127,7 @@ class VizWizDataLoader(TransparentDataLoader):
                 if self.dataloader_mode == "caption_wise":
                     caption = self.dataset[i]["tokenized_caption"]
                     caption = self.preprocess(caption)
-                else: 
+                else:
                     caption = self.dataset[i]["all_captions"]
                 image_idx_batch[idx_proc].append(img_idx)
                 caption_y_batch[idx_proc].append(caption)
@@ -140,9 +140,7 @@ class VizWizDataLoader(TransparentDataLoader):
                     caption_y_batch[idx_proc] = []
         self.num_batches = len(self.image_idx_x[0])
 
-    def get_next_batch(
-        self, verbose=False, get_also_image_idxes=False
-    ):
+    def get_next_batch(self, verbose=False, get_also_image_idxes=False):
         if self.batch_it[self.rank] >= self.num_batches:
             if verbose:
                 print("Proc: " + str(self.rank) + " re-initialization")
@@ -159,7 +157,7 @@ class VizWizDataLoader(TransparentDataLoader):
         caption_str_batch = copy.copy(
             self.caption_y[self.rank][self.batch_it[self.rank]]
         )
-        if self.dataloader_mode == "caption_wise": 
+        if self.dataloader_mode == "caption_wise":
             caption_encoded_batch = language_utils.convert_allsentences_word2idx(
                 caption_str_batch, self.dataset.caption_word2idx_dict
             )
@@ -167,7 +165,7 @@ class VizWizDataLoader(TransparentDataLoader):
                 caption_encoded_batch, self.dataset.caption_word2idx_dict["PAD"]
             )
             batch_y = torch.tensor(batch_y)
-        else: 
+        else:
             batch_y = caption_str_batch
 
         if verbose:
@@ -182,7 +180,7 @@ class VizWizDataLoader(TransparentDataLoader):
                     )
                     / len(batch_y)
                 )
-            else: 
+            else:
                 mean_trg_len = "variable"
             print(
                 str(self.rank)
@@ -203,18 +201,23 @@ class VizWizDataLoader(TransparentDataLoader):
             )
 
         self.batch_it[self.rank] += 1
-        
+
         if self.dataloader_mode == "caption_wise":
-            if get_also_image_idxes: 
-                return batch_x, batch_y, batch_x_num_pads, batch_y_num_pads, image_idx_batch
+            if get_also_image_idxes:
+                return (
+                    batch_x,
+                    batch_y,
+                    batch_x_num_pads,
+                    batch_y_num_pads,
+                    image_idx_batch,
+                )
             else:
                 return batch_x, batch_y, batch_x_num_pads, batch_y_num_pads
         else:
-            if get_also_image_idxes: 
+            if get_also_image_idxes:
                 return batch_x, batch_y, batch_x_num_pads, image_idx_batch
-            else: 
-                return batch_x,  batch_y, batch_x_num_pads
-
+            else:
+                return batch_x, batch_y, batch_x_num_pads
 
     def get_batch_samples(self, dataset_split, img_idx_batch_list):
         batch_captions_y = []
@@ -231,7 +234,9 @@ class VizWizDataLoader(TransparentDataLoader):
                 batch_captions_y.append(preprocessed_caption)
 
         self.dataset.current_split = dataset_split
-        batch_x, batch_x_num_pads = self.get_padded_img_batch(img_idxes=img_idx_batch_list)
+        batch_x, batch_x_num_pads = self.get_padded_img_batch(
+            img_idxes=img_idx_batch_list
+        )
 
         if dataset_split != VizWizDataset.TestSet_ID:
             batch_caption_y_encoded = language_utils.convert_allsentences_word2idx(

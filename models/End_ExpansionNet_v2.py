@@ -323,7 +323,13 @@ class E2E_ExpansionNet_Captioner(Captioner):
         num_exp_enc_list=[32, 64, 128, 256, 512],
     ):
         super().__init__(
-            beam_search_args, model, split_encoder, apply_log_softmax, encoder, decoder, train
+            beam_search_args,
+            model,
+            split_encoder,
+            apply_log_softmax,
+            encoder,
+            decoder,
+            train,
         )
         self.rank = rank
         self.N_enc = N_enc
@@ -335,9 +341,9 @@ class E2E_ExpansionNet_Captioner(Captioner):
         if self.split_encoder:
             return self.encoder(enc_input, enc_input_num_pads)
         else:
-            if self.train: 
+            if self.train:
                 return self.model.module.forward_enc(enc_input, enc_input_num_pads)
-    
+
             return self.model.forward_enc(enc_input, enc_input_num_pads)
 
     def forward_dec(
@@ -351,7 +357,7 @@ class E2E_ExpansionNet_Captioner(Captioner):
                 y = self.log_softmax(y)
             return y
         else:
-            if self.train: 
+            if self.train:
                 return self.model.module.forward_dec(
                     cross_input, enc_input_num_pads, dec_input, dec_input_num_pads
                 )
@@ -629,7 +635,9 @@ class End_ExpansionNet_v2_Decoder(CaptioningModel):
 
         self.decoders = nn.ModuleList(
             [
-                DecoderLayer(d_model, num_heads, ff, num_exp_dec, drop_args.dec, eps=eps)
+                DecoderLayer(
+                    d_model, num_heads, ff, num_exp_dec, drop_args.dec, eps=eps
+                )
                 for _ in range(N_dec)
             ]
         )
