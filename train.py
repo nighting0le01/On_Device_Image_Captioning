@@ -102,7 +102,8 @@ def train(
     saving_timer_start = time()
     time_to_save = False
     running_loss = 0
-    running_teacher_loss = None
+    running_teacher_loss = 0
+    running_student_loss = 0
     running_time = 0
     already_trained_steps = (
         data_loader.get_num_batches() * data_loader.get_epoch_it()
@@ -120,10 +121,10 @@ def train(
     if train_args.quantized:
         if train_args.kd:
             ddp_encoder, ddp_decoder, ddp_teacher = ddp_model
-            if train_args.phase_2: 
-                    running_teacher_loss = 0
+            ddp_teacher.eval()
 
-        ddp_encoder, ddp_decoder = ddp_model
+        else: 
+            ddp_encoder, ddp_decoder = ddp_model
 
     for it in range(already_trained_steps, num_iter):
         iter_timer_start = time()
@@ -131,7 +132,7 @@ def train(
             ddp_encoder.train()
             ddp_decoder.train()
             if train_args.kd and train_args.phase_2:
-                ddp_teacher
+                ddp_teacher.train()
         else:
             ddp_model.train()
 
@@ -182,7 +183,11 @@ def train(
                         enc_x_num_pads=batch_input_x_num_pads,
                         dec_x_num_pads=batch_target_y_num_pads,
                     )
+                    
+                    print(torch.mean(log_softmax(teacher_logprobs).exp() * (log_softmax(teacher_logprobs) - log_softmax(pred_logprobs))))
                     kd_loss_student = kd_loss_fn(log_softmax(pred_logprobs), log_softmax(teacher_logprobs))
+                    print(kd_loss_student.item())
+                    running_student_loss += kd_loss_student.item()
                     if train_args.phase_2:
                         ce_teacher_loss = loss_function(teacher_logprobs, batch_target_y[:, 1:],
                                                          dataset.get_pad_token_idx())
@@ -283,6 +288,8 @@ def train(
         if (it + 1) % train_args.print_every_iter == 0:
             if not train_args.reinforce:
                 avg_loss = running_loss / (it + 1 - prev_print_iter)
+                if train_args.kd: 
+                    avg_student_kd_loss = running_student_loss /  (it + 1 - prev_print_iter)
                 if train_args.phase_2: 
                     avg_teacher_loss = running_teacher_loss / (it + 1 - prev_print_iter)
                 else: 
@@ -302,6 +309,8 @@ def train(
                     + str(train_args.num_accum)
                     + " avg loss: "
                     + str(round(avg_loss, 3))
+                     + " avg student kd loss: "
+                    + str(round( avg_student_kd_loss, 3))
                     + "avg teacher loss: "
                     + str(round(avg_teacher_loss, 3))
                     + " elapsed: "
@@ -310,6 +319,8 @@ def train(
                     + str(round(avg_time_time_per_iter, 3))
                 )
                 running_loss = 0
+                if train_args.kd: 
+                    running_student_loss = 0
                 if train_args.phase_2: 
                     running_teacher_loss = 0
                 running_time = 0
@@ -482,14 +493,15 @@ def load_state_dict_filtered(model, checkpoint, filter_prefixes="enc"):
 
 def load_base_state_dict(model, checkpoint):
     new_state_dict = {}
-    """
+ 
     for key, value in checkpoint.items():
+        """
         if "swin_transf.patch_embed.proj.weight" in key:
             new_state_dict[key] = torch.nn.init.kaiming_uniform(
                 torch.empty((192, 3, 3, 3))
-            )
-            continue
-        new_state_dict[key] = value """
+            )"""
+
+        new_state_dict[key] = value 
     model.load_state_dict(new_state_dict)
 
 
@@ -561,7 +573,7 @@ def distributed_train(
                 output_idx2word=dataset.caption_idx2word_list,
                 max_seq_len=model_max_len,
                 drop_args=model_args.drop_args,
-                eps=1e-8,
+                eps=1e-9,
                 rank="cpu",
             )
 
@@ -577,13 +589,13 @@ def distributed_train(
                 output_idx2word=dataset.caption_idx2word_list,
                 max_seq_len=model_max_len,
                 drop_args=model_args.drop_args,
-                eps=1e-8,
+                eps=1e-9,
                 rank="cpu",
             )
         if not train_args.quantized or (train_args.quantized and train_args.kd):
             model = End_ExpansionNet_v2(
                 swin_img_size=img_size,
-                swin_patch_size=3,
+                swin_patch_size=4,
                 swin_in_chans=3,
                 swin_embed_dim=192,
                 swin_depths=[2, 2, 18, 2],
@@ -677,17 +689,18 @@ def distributed_train(
             encoder_model.to("cpu")
             decoder_model.to("cpu")
             prepared_encoder = prepare_model(
-                encoder_model, example_input, qconfig_mapping, device="cpu", qat=False
+                encoder_model, example_input, qconfig_mapping, device="cpu", qat=True
             )
             print("Encoder prepared ...")
             prepared_decoder = prepare_model(
-                decoder_model, example_input, qconfig_mapping, device="cpu", qat=False
+                decoder_model, example_input, qconfig_mapping, device="cpu", qat=True
             )
             print("Decoder prepared ...")
         if train_args.kd:
             checkpoint = torch.load(path_args.pretrain_checkpoint)
             load_base_state_dict(model, checkpoint["model_state_dict"])
             model.to(rank)
+            print(prepared_encoder.activation_post_process_940)
         else:
             del encoder_model
             del decoder_model
@@ -1006,7 +1019,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--pretrain_checkpoint",
         type=str,
-        default="./pretrained_weights/base/4_th.pth",
+        default="./pretrained_weights/rf_model.pth",
     )
     parser.add_argument(
         "--encoder_load_path",
