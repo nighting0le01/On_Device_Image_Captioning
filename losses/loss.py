@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 
 class LabelSmoothingLoss(nn.Module):
@@ -37,3 +38,8 @@ class LabelSmoothingLoss(nn.Module):
             tot_loss = tot_loss_tensor.sum()
 
         return tot_loss
+
+def kl_loss(student_outputs, teacher_outputs, temperature):
+        KD_loss = nn.KLDivLoss()(F.log_softmax(student_outputs/temperature, dim=1),
+                             F.softmax(teacher_outputs/temperature, dim=1)) * (temperature * temperature)
+        return KD_loss

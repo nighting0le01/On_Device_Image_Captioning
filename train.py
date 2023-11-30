@@ -35,7 +35,7 @@ from data.coco_dataloader import CocoDataLoader
 from data.vizwiz_dataset import VizWizDataset
 from data.vizwiz_dataloader import VizWizDataLoader
 from test import compute_evaluation_loss, evaluate_model_on_set
-from losses.loss import LabelSmoothingLoss
+from losses.loss import LabelSmoothingLoss, kl_loss
 from losses.reward import ReinforceCiderReward
 from optims.radam import RAdam
 from utils import language_utils
@@ -175,23 +175,21 @@ def train(
                 )
 
                 if train_args.kd:
-                    kd_loss_fn = torch.nn.KLDivLoss(log_target=True)
-                    log_softmax = torch.nn.LogSoftmax(dim=-1)
+
                     teacher_logprobs = ddp_teacher(
                         enc_x=batch_input_x,
                         dec_x=batch_target_y[:, :-1],
                         enc_x_num_pads=batch_input_x_num_pads,
                         dec_x_num_pads=batch_target_y_num_pads,
                     )
-                    
-                    print(torch.mean(log_softmax(teacher_logprobs).exp() * (log_softmax(teacher_logprobs) - log_softmax(pred_logprobs))))
-                    kd_loss_student = kd_loss_fn(log_softmax(pred_logprobs), log_softmax(teacher_logprobs))
+                                
+                    kd_loss_student = kl_loss(pred_logprobs, teacher_logprobs, 2)
                     print(kd_loss_student.item())
                     running_student_loss += kd_loss_student.item()
                     if train_args.phase_2:
                         ce_teacher_loss = loss_function(teacher_logprobs, batch_target_y[:, 1:],
                                                          dataset.get_pad_token_idx())
-                        kd_teacher_loss = kd_loss_fn(log_softmax(teacher_logprobs), log_softmax(pred_logprobs))
+                        kd_teacher_loss = kl_loss(teacher_logprobs, pred_logprobs, 2)
                         teacher_loss = ce_teacher_loss + kd_teacher_loss
                         teacher_loss.backward()
                         running_teacher_loss += teacher_loss.item()
