@@ -61,6 +61,9 @@ def save_last_checkpoint(
     num_max_checkpoints=3,
     datetime_format="%Y-%m-%d-%H:%M:%S",
     additional_info="noinfo",
+    encoder=False,
+    decoder=False, 
+    teacher=False,
     verbose=True,
 ):
     checkpoint = {
@@ -69,6 +72,13 @@ def save_last_checkpoint(
         "scheduler_state_dict": scheduler.state_dict(),
         "data_loader_state_dict": data_loader.save_state(),
     }
+    model_type = ""
+    if encoder: 
+        model_type = "encoder"
+    if decoder: 
+        model_type = "decoder"
+    if teacher: 
+        model_type = "teacher"
 
     ls_files = os.listdir(save_model_path)
     oldest_checkpoint_datetime = None
@@ -103,6 +113,7 @@ def save_last_checkpoint(
         + str(data_loader.get_batch_size())
         + "_"
         + str(additional_info)
+        + str(model_type)
         + "_.pth"
     )
     if verbose:
