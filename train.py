@@ -101,6 +101,7 @@ def train(
     algorithm_start_time = time()
     saving_timer_start = time()
     time_to_save = False
+    kd_alpha = .9
     running_loss = 0
     running_teacher_loss = 0
     running_student_loss = 0
@@ -175,22 +176,29 @@ def train(
                 )
 
                 if train_args.kd:
-
-                    teacher_logprobs = ddp_teacher(
-                        enc_x=batch_input_x,
-                        dec_x=batch_target_y[:, :-1],
-                        enc_x_num_pads=batch_input_x_num_pads,
-                        dec_x_num_pads=batch_target_y_num_pads,
-                    )
+                    if train_args.phase_2:
+                         teacher_logprobs = ddp_teacher(
+                            enc_x=batch_input_x,
+                            dec_x=batch_target_y[:, :-1],
+                            enc_x_num_pads=batch_input_x_num_pads,
+                            dec_x_num_pads=batch_target_y_num_pads,
+                        )
+                    else: 
+                        with torch.no_grad():
+                            teacher_logprobs = ddp_teacher(
+                                enc_x=batch_input_x,
+                                dec_x=batch_target_y[:, :-1],
+                                enc_x_num_pads=batch_input_x_num_pads,
+                                dec_x_num_pads=batch_target_y_num_pads,
+                            )
                                 
-                    kd_loss_student = kl_loss(pred_logprobs, teacher_logprobs, 2)
-                    print(kd_loss_student.item())
+                    kd_loss_student = kl_loss(pred_logprobs, teacher_logprobs, temperature=4)
                     running_student_loss += kd_loss_student.item()
                     if train_args.phase_2:
                         ce_teacher_loss = loss_function(teacher_logprobs, batch_target_y[:, 1:],
                                                          dataset.get_pad_token_idx())
-                        kd_teacher_loss = kl_loss(teacher_logprobs, pred_logprobs, 2)
-                        teacher_loss = ce_teacher_loss + kd_teacher_loss
+                        kd_teacher_loss = kl_loss(teacher_logprobs, pred_logprobs, temperature=3)
+                        teacher_loss = (1 - kd_alpha) * ce_teacher_loss + kd_alpha * kd_teacher_loss
                         teacher_loss.backward()
                         running_teacher_loss += teacher_loss.item()
 
@@ -207,7 +215,7 @@ def train(
                 pred_logprobs, batch_target_y[:, 1:], dataset.get_pad_token_idx()
             )
             if train_args.kd:
-                loss += kd_loss_student
+                loss = (1 - kd_alpha) * loss + kd_alpha * kd_loss_student
             # print(f"LOSS IS {loss}")
             running_loss += loss.item()
 
@@ -288,6 +296,9 @@ def train(
                 avg_loss = running_loss / (it + 1 - prev_print_iter)
                 if train_args.kd: 
                     avg_student_kd_loss = running_student_loss /  (it + 1 - prev_print_iter)
+                else: 
+                    avg_student_kd_loss = 0
+                avg_student_ce_loss = avg_loss - avg_student_kd_loss    
                 if train_args.phase_2: 
                     avg_teacher_loss = running_teacher_loss / (it + 1 - prev_print_iter)
                 else: 
@@ -305,11 +316,13 @@ def train(
                     + str(round(current_rl, 12))
                     + " n.acc: "
                     + str(train_args.num_accum)
-                    + " avg loss: "
+                    + " avg total loss: "
                     + str(round(avg_loss, 3))
-                     + " avg student kd loss: "
+                    + " avg student ce loss: "
+                    + str(round( avg_student_ce_loss, 3))
+                    + " avg student kd loss: "
                     + str(round( avg_student_kd_loss, 3))
-                    + "avg teacher loss: "
+                    + " avg teacher loss: "
                     + str(round(avg_teacher_loss, 3))
                     + " elapsed: "
                     + convert_time_as_hhmmss(tot_elapsed_time)
@@ -695,10 +708,9 @@ def distributed_train(
             )
             print("Decoder prepared ...")
         if train_args.kd:
-            checkpoint = torch.load(path_args.pretrain_checkpoint)
+            checkpoint = torch.load(path_args.teacher_checkpoint)
             load_base_state_dict(model, checkpoint["model_state_dict"])
             model.to(rank)
-            print(prepared_encoder.activation_post_process_940)
         else:
             del encoder_model
             del decoder_model
@@ -1029,6 +1041,11 @@ if __name__ == "__main__":
         type=str,
         default="./pretrained_weights/static_quantized_decoder_rf_model.pth",
     )
+    parser.add_argument(
+        "--teacher_checkpoint",
+        type=str,
+        default="./pretrained_weights/base/4_th.pth",
+    )
 
     parser.add_argument("--seed", type=int, default=1234)
 
@@ -1094,6 +1111,7 @@ if __name__ == "__main__":
         pretrain_checkpoint=args.pretrain_checkpoint,
         encoder_load_path=args.encoder_load_path,
         decoder_load_path=args.decoder_load_path,
+        teacher_checkpoint=args.teacher_checkpoint
     )
 
     train_args = Namespace(
