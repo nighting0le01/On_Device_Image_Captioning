@@ -191,7 +191,6 @@ def train(
                                 enc_x_num_pads=batch_input_x_num_pads,
                                 dec_x_num_pads=batch_target_y_num_pads,
                             )
-                                
                     kd_loss_student = kl_loss(pred_logprobs, teacher_logprobs, temperature=4)
                     running_student_loss += kd_loss_student.item()
                     if train_args.phase_2:
@@ -451,15 +450,48 @@ def train(
             saving_timer_start = time()
             time_to_save = False
             if rank == 0:
-                save_last_checkpoint(
-                    ddp_model.module,
-                    optimizer,
-                    sched,
-                    data_loader,
-                    path_args.save_path,
-                    num_max_checkpoints=train_args.how_many_checkpoints,
-                    additional_info="rf" if train_args.reinforce else "xe",
-                )
+                if train_args.quantized:
+                    save_last_checkpoint(
+                        ddp_encoder.module,
+                        optimizer,
+                        sched,
+                        data_loader,
+                        path_args.save_path,
+                        num_max_checkpoints=train_args.how_many_checkpoints,
+                        additional_info="rf" if train_args.reinforce else "xe",
+                        encoder=True
+                    )
+                    save_last_checkpoint(
+                        ddp_decoder.module,
+                        optimizer,
+                        sched,
+                        data_loader,
+                        path_args.save_path,
+                        num_max_checkpoints=train_args.how_many_checkpoints,
+                        additional_info="rf" if train_args.reinforce else "xe",
+                        decoder=True
+                    )
+                    if train_args.phase_2:
+                        save_last_checkpoint(
+                            ddp_teacher.module,
+                            optimizer,
+                            sched,
+                            data_loader,
+                            path_args.save_path,
+                            num_max_checkpoints=train_args.how_many_checkpoints,
+                            additional_info="rf" if train_args.reinforce else "xe",
+                            teacher=True
+                        )
+                else: 
+                    save_last_checkpoint(
+                        ddp_model.module,
+                        optimizer,
+                        sched,
+                        data_loader,
+                        path_args.save_path,
+                        num_max_checkpoints=train_args.how_many_checkpoints,
+                        additional_info="rf" if train_args.reinforce else "xe",
+                    )
 
 
 def load_state_dict_filtered(model, checkpoint, filter_prefixes="enc"):
@@ -984,8 +1016,8 @@ if __name__ == "__main__":
         type=str,
         default="./pretrained_weights/",
     )  # default='./github_ignore_material/saves/')
-    parser.add_argument("--save_every_minutes", type=int, default=25)
-    parser.add_argument("--how_many_checkpoints", type=int, default=1)
+    parser.add_argument("--save_every_minutes", type=int, default=1500)
+    parser.add_argument("--how_many_checkpoints", type=int, default=3)
     parser.add_argument("--print_every_iter", type=int, default=10)
 
     parser.add_argument("--eval_every_iter", type=int, default=999999)
