@@ -581,8 +581,8 @@ def distributed_train(
     img_size = 384
     if train_args.kd and not train_args.quantized:
         raise ValueError("Can only run kd with quantization code flow!")
-    if train_args.kd and train_args.quantized_checkpoint:
-        raise ValueError("Can only run kd on first pass!")
+    # if train_args.kd and train_args.quantized_checkpoint:
+    #     raise ValueError("Can only run kd on first pass!")
     if train_args.is_end_to_end:
         from models.End_ExpansionNet_v2 import (
             End_ExpansionNet_v2,
@@ -718,9 +718,17 @@ def distributed_train(
         # TODO: Loading and Preparing Logic (look at quantization.py)
         if train_args.quantized_checkpoint:
             print("Checkpoint already prepared for quantization...")
-            prepared_encoder.load_state_dict(torch.load(path_args.encoder_load_path))
+            prepared_encoder = prepare_model(
+                encoder_model, example_input, qconfig_mapping, device="cpu", qat=True
+            )
+            print("Encoder prepared ...")
+            prepared_decoder = prepare_model(
+                decoder_model, example_input, qconfig_mapping, device="cpu", qat=True
+            )
+            print("Decoder prepared ...")
+            prepared_encoder.load_state_dict(torch.load(path_args.encoder_load_path)["model_state_dict"])
             print("Encoder loaded ...")
-            prepared_decoder.load_state_dict(torch.load(path_args.decoder_load_path))
+            prepared_decoder.load_state_dict(torch.load(path_args.decoder_load_path)["model_state_dict"])
             print("Decoder loaded ...")
 
         else:
@@ -1071,12 +1079,12 @@ if __name__ == "__main__":
     parser.add_argument(
         "--encoder_load_path",
         type=str,
-        default="./pretrained_weights/static_quantized_encoder_rf_model.pth",
+        default="./pretrained_weights/qat_stage_1_3_epoch/encoder.pth",
     )
     parser.add_argument(
         "--decoder_load_path",
         type=str,
-        default="./pretrained_weights/static_quantized_decoder_rf_model.pth",
+        default="./pretrained_weights/qat_stage_1_3_epoch/decoder.pth",
     )
     parser.add_argument(
         "--teacher_checkpoint",
