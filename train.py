@@ -1,5 +1,6 @@
 import argparse
 import os
+import sys
 import random
 from argparse import Namespace
 from time import time
@@ -112,6 +113,7 @@ def train(
     )
     prev_print_iter = already_trained_steps
     num_iter = data_loader.get_num_batches() * train_args.num_epochs
+    num_batches = data_loader.get_num_batches()
     print(f"NUM ITER: {num_iter}")
     sampling_search_kwargs = {
         "sample_max_seq_len": train_args.scst_max_len,
@@ -441,6 +443,8 @@ def train(
             time_to_save = True
 
         # saving
+        if (it + 1) % num_batches == 0:
+            time_to_save = True
         elapsed_minutes = (time() - saving_timer_start) / 60
         if (
             time_to_save
@@ -492,6 +496,7 @@ def train(
                         num_max_checkpoints=train_args.how_many_checkpoints,
                         additional_info="rf" if train_args.reinforce else "xe",
                     )
+            
 
 
 def load_state_dict_filtered(model, checkpoint, filter_prefixes="enc"):
