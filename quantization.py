@@ -158,7 +158,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--save_model_path",
         type=str,
-        default="/usr0/home/nvaikunt/On_Device_Image_Captioning/pretrained_weights/rf_model.pth",
+        default="/usr0/home/nvaikunt/On_Device_Image_Captioning/pretrained_weights/base/4_th.pth",
     )
     parser.add_argument("--eval_beam_sizes", type=str2list, default=[3])
     parser.add_argument("--image_folder", type=str, default="./VizWizData")
@@ -178,7 +178,7 @@ if __name__ == "__main__":
         default="/usr0/home/nvaikunt/On_Device_Image_Captioning/pretrained_weights",
     )  # default='./github_ignore_material/saves/')
     parser.add_argument(
-        "--static", type=str2bool, default=True
+        "--static", type=str2bool, default=False
     )  # default='./github_ignore_material/saves/')
     parser.add_argument(
         "--qat", type=str2bool, default=False

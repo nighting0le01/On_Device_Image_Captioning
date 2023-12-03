@@ -25,9 +25,9 @@ from utils.quantization_utils import (
     prepare_model,
     quantize_model,
 )
-from torch.ao.quantization import get_default_qconfig
+from torch.ao.quantization.qconfig import default_embedding_qat_qconfig
 from torch.ao.quantization.quantize_fx import prepare_fx, convert_fx
-from torch.ao.quantization import get_default_qconfig_mapping, QConfigMapping
+from torch.ao.quantization import get_default_qconfig_mapping, QConfigMapping, get_default_qat_qconfig_mapping
 import os
 
 
@@ -81,7 +81,7 @@ def compute_quantized_evaluation_loss(
             dec_x_num_pads=sub_batch_target_y_num_pads,
         )
         pred = decoder(
-            enc_x=sub_batch_input_x,
+            enc_x=cross_enc_out,
             dec_x=sub_batch_target_y[:, :-1],
             enc_x_num_pads=sub_batch_input_x_num_pads,
             dec_x_num_pads=sub_batch_target_y_num_pads,
@@ -321,6 +321,9 @@ def main():
         "--img_size", type=int, default=384, help=" Image size for Swin Transformer"
     )
     parser.add_argument("--device", type=str, default="cpu")
+    parser.add_argument(
+        "--model_type", type=str, default="qat", help="Model Type to Load"
+    )
     args = parser.parse_args()
     torch.manual_seed(args.seed)
 
@@ -396,29 +399,57 @@ def main():
     )
 
     # Get quantized model structures
-    model_type = args.encoder_load_path.split("/")[-1].split("_")[0]
+    model_type = args.model_type
     if model_type == "static":
         static_qconfig_str = "x86"
         qconfig_mapping = get_default_qconfig_mapping(static_qconfig_str)
+    elif model_type == "qat": 
+        static_qconfig_str = "x86"
+        qconfig_mapping = get_default_qat_qconfig_mapping(
+                static_qconfig_str, version=1
+        )
+            # qconfig_mapping = get_default_qconfig_mapping(static_qconfig_str)
+        qconfig_mapping.set_object_type(
+                torch.nn.Embedding, default_embedding_qat_qconfig
+        )
     else:
         qconfig_mapping = QConfigMapping().set_global(
             torch.ao.quantization.default_dynamic_qconfig
         )
-
+    is_qat = False
+    if model_type == "qat":
+        is_qat = True
     example_input = (
         torch.randn(1, 3, args.img_size, args.img_size),
         torch.randint(1, 100, (1, 15)),
         [0],
         [0],
     )
-    prepared_encoder = prepare_model(encoder_model, example_input, qconfig_mapping)
-    prepared_decoder = prepare_model(decoder_model, example_input, qconfig_mapping)
-    encoder_model = quantize_model(prepared_encoder)
-    decoder_model = quantize_model(prepared_decoder)
-    encoder_model.load_state_dict(torch.load(args.encoder_load_path))
-    print("Encoder loaded ...")
-    decoder_model.load_state_dict(torch.load(args.decoder_load_path))
-    print("Decoder loaded ...")
+    if is_qat: 
+        prepared_encoder = prepare_model(encoder_model, example_input, qconfig_mapping, qat=is_qat)
+        print("Prepared Encoder Object ...")
+        prepared_decoder = prepare_model(decoder_model, example_input, qconfig_mapping, qat=is_qat)
+        print("Prepared Decoder Object ...")
+
+        prepared_encoder.load_state_dict(torch.load(args.encoder_load_path)["model_state_dict"])
+        print("Prepared Encoder Weights loaded ...")
+        prepared_decoder.load_state_dict(torch.load(args.decoder_load_path)["model_state_dict"])
+        print("Prepared Decoder Weights loaded ...")
+        encoder_model = quantize_model(prepared_encoder)
+        print("Quantized Encoder!")
+        decoder_model = quantize_model(prepared_decoder)
+        print("Quantized Decoder!")
+    else: 
+        prepared_encoder = prepare_model(encoder_model, example_input, qconfig_mapping)
+        prepared_decoder = prepare_model(decoder_model, example_input, qconfig_mapping)
+        encoder_model = quantize_model(prepared_encoder)
+        decoder_model = quantize_model(prepared_decoder)
+        encoder_model.load_state_dict(torch.load(args.encoder_load_path))
+        print("Encoder loaded ...")
+        decoder_model.load_state_dict(torch.load(args.decoder_load_path))
+        print("Decoder loaded ...")
+    
+
 
     image_folder = args.image_folder
     array_of_init_seeds = [random.random() for _ in range(1 * 2)]
