@@ -200,7 +200,7 @@ def train(
                                                          dataset.get_pad_token_idx())
                         kd_teacher_loss = kl_loss(teacher_logprobs, pred_logprobs, temperature=3)
                         teacher_loss = (1 - kd_alpha) * ce_teacher_loss + kd_alpha * kd_teacher_loss
-                        teacher_loss.backward()
+                        teacher_loss.backward(retain_graph=True)
                         running_teacher_loss += teacher_loss.item()
 
 
@@ -281,7 +281,7 @@ def train(
             running_reward += reward.sum().item() / len(reward.flatten())
             running_reward_base += reward_base.sum().item() / len(reward_base.flatten())
             running_loss += reward_loss.item()
-            reward_loss.backward()
+            reward_loss.backward(retain_graph=True)
 
         if it % train_args.num_accum == 0:
             optimizer.step()
@@ -999,6 +999,17 @@ def spawn_train_processes(model_args, optim_args, dataset, train_args, path_args
     )"""
 
 
+def set_seeds():
+    seed = args.seed
+    print("seed: " + str(seed))
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    torch.backends.cudnn.enabled = False
+    np.random.seed(seed)
+    random.seed(seed)
+    os.environ["PYTHONHASHSEED"] = str(seed)
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Image Captioning")
     parser.add_argument("--model_dim", type=int, default=512)
@@ -1039,14 +1050,14 @@ if __name__ == "__main__":
 
     parser.add_argument("--reinforce", type=str2bool, default=False)
     parser.add_argument("--vizwiz", type=str2bool, default=True)
-    parser.add_argument("--quantized", type=str2bool, default=False)
-    parser.add_argument("--kd", type=str2bool, default=False)
-    parser.add_argument("--phase_2", type=str2bool, default=False)
+    parser.add_argument("--quantized", type=str2bool, default=True) # just q--ph1
+    parser.add_argument("--kd", type=str2bool, default=True) # all three is ph2, only kd and q is p
+    parser.add_argument("--phase_2", type=str2bool, default=True)
     parser.add_argument("--quantization_type", type=str, default="static")
-    parser.add_argument("--quantized_checkpoint", type=str2bool, default=False)
+    parser.add_argument("--quantized_checkpoint", type=str2bool, default=True)
 
     parser.add_argument("--scst_max_len", type=int, default=20)
-    parser.add_argument("--num_epochs", type=int, default=5)
+    parser.add_argument("--num_epochs", type=int, default=1)
 
     parser.add_argument(
         "--image_folder",
@@ -1079,17 +1090,17 @@ if __name__ == "__main__":
     parser.add_argument(
         "--encoder_load_path",
         type=str,
-        default="./pretrained_weights/qat_stage_1_3_epoch/encoder.pth",
+        default="/home/arpitsah/Desktop/Fall-2023/odml/On_Device_Image_Captioning/pretrained_weights/QAKD_full_stage_1/checkpoint_2023-12-02-16:56:36_epoch0it7875bs2_xeencoder_.pth",
     )
     parser.add_argument(
         "--decoder_load_path",
         type=str,
-        default="./pretrained_weights/qat_stage_1_3_epoch/decoder.pth",
+        default="/home/arpitsah/Desktop/Fall-2023/odml/On_Device_Image_Captioning/pretrained_weights/QAKD_full_stage_1/checkpoint_2023-12-02-16:56:39_epoch0it7875bs2_xedecoder_.pth",
     )
     parser.add_argument(
         "--teacher_checkpoint",
         type=str,
-        default="./pretrained_weights/base/4_th.pth",
+        default="/home/arpitsah/Desktop/Fall-2023/odml/On_Device_Image_Captioning/pretrained_weights/4_th.pth",
     )
 
     parser.add_argument("--seed", type=int, default=1234)
@@ -1108,15 +1119,7 @@ if __name__ == "__main__":
     args.ddp_sync_port = str(args.ddp_sync_port)
 
     # Seed setting ---------------------------------------------
-    seed = args.seed
-    print("seed: " + str(seed))
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)
-    torch.backends.cudnn.enabled = False
-    np.random.seed(seed)
-    random.seed(seed)
-    os.environ["PYTHONHASHSEED"] = str(seed)
-
+    set_seeds()
     drop_args = Namespace(
         enc=args.enc_drop,
         dec=args.dec_drop,
