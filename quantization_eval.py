@@ -400,7 +400,6 @@ def main():
         rank="cpu",
     )
 
-
     # Get quantized model structures
     model_type = args.model_type
     if model_type == "static":
@@ -433,10 +432,9 @@ def main():
         print("Prepared Encoder Object ...")
         prepared_decoder = prepare_model(decoder_model, example_input, qconfig_mapping, qat=is_qat)
         print("Prepared Decoder Object ...")
-
-        prepared_encoder.load_state_dict(torch.load(args.encoder_load_path)["model_state_dict"])
+        prepared_encoder.load_state_dict(torch.load(args.encoder_load_path, map_location="cpu")["model_state_dict"])
         print("Prepared Encoder Weights loaded ...")
-        prepared_decoder.load_state_dict(torch.load(args.decoder_load_path)["model_state_dict"])
+        prepared_decoder.load_state_dict(torch.load(args.decoder_load_path, map_location="cpu")["model_state_dict"])
         print("Prepared Decoder Weights loaded ...")
         encoder_model = quantize_model(prepared_encoder)
         print("Quantized Encoder!")
