@@ -129,6 +129,7 @@ class Captioner:
         ]
 
         x = self.forward_enc(enc_input=enc_input, enc_input_num_pads=enc_input_num_pads)
+
         x = (
             x.unsqueeze(1)
             .expand(-1, num_outputs, -1, -1)
@@ -239,6 +240,7 @@ class Captioner:
         bs = enc_input.shape[0]
 
         cross_enc_output = self.forward_enc(enc_input, enc_input_num_pads)
+     
 
         # init: ------------------------------------------------------------------
         init_dec_class = (
@@ -293,7 +295,7 @@ class Captioner:
             loop_dec_classes = loop_dec_classes.reshape(
                 bs * beam_size, time_step
             ).contiguous()
-
+       
             log_probs = self.forward_dec(
                 cross_input=cross_enc_output,
                 enc_input_num_pads=enc_input_num_pads,

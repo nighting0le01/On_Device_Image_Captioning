@@ -169,7 +169,7 @@ def train(
                 )
                 # print(it)
                 # print(f"First Pass!")
-
+     
                 pred_logprobs = ddp_decoder(
                     enc_x=cross_enc_out,
                     dec_x=batch_target_y[:, :-1],
@@ -780,8 +780,8 @@ def distributed_train(
         ddp_decoder = DDP(prepared_decoder, device_ids=[rank])
         if train_args.kd:
             ddp_teacher = DDP(model, device_ids=[rank])
-        # ddp_encoder = encoder_model
-        # ddp_decoder = decoder_model
+        # ddp_encoder = prepared_encoder
+        # ddp_decoder = prepared_decoder
     else:
         model.to(rank)
         ddp_model = DDP(model, device_ids=[rank])
@@ -1051,10 +1051,10 @@ if __name__ == "__main__":
     parser.add_argument("--reinforce", type=str2bool, default=False)
     parser.add_argument("--vizwiz", type=str2bool, default=True)
     parser.add_argument("--quantized", type=str2bool, default=True) # just q--ph1
-    parser.add_argument("--kd", type=str2bool, default=True) # all three is ph2, only kd and q is p
-    parser.add_argument("--phase_2", type=str2bool, default=True)
+    parser.add_argument("--kd", type=str2bool, default=False) # all three is ph2, only kd and q is p
+    parser.add_argument("--phase_2", type=str2bool, default=False)
     parser.add_argument("--quantization_type", type=str, default="static")
-    parser.add_argument("--quantized_checkpoint", type=str2bool, default=True)
+    parser.add_argument("--quantized_checkpoint", type=str2bool, default=False)
 
     parser.add_argument("--scst_max_len", type=int, default=20)
     parser.add_argument("--num_epochs", type=int, default=1)
@@ -1100,7 +1100,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--teacher_checkpoint",
         type=str,
-        default="/home/arpitsah/Desktop/Fall-2023/odml/On_Device_Image_Captioning/pretrained_weights/4_th.pth",
+        default="./pretrained_weights/4_th.pth",
     )
 
     parser.add_argument("--seed", type=int, default=1234)

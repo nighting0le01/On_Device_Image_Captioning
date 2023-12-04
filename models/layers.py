@@ -152,9 +152,12 @@ class DynamicExpansionBlock(nn.Module):
     def forward(self, x, n_indexes, mask):
         bs, dec_len, _ = x.shape
 
-        cond = self.cond_embed(x).view(bs, dec_len, 1, self.d_model)
-        query_exp = self.query_exp_vectors(n_indexes).unsqueeze(1)
-        bias_exp = self.bias_exp_vectors(n_indexes).unsqueeze(1)
+        # cond = self.cond_embed(x).view(bs, dec_len, 1, self.d_model)
+        # query_exp = self.query_exp_vectors(n_indexes).unsqueeze(1)
+        # bias_exp = self.bias_exp_vectors(n_indexes).unsqueeze(1)
+        cond = self.cond_embed(x).view(bs, dec_len, 1, self.d_model).repeat_interleave(self.num_exp, dim=2)
+        query_exp = self.query_exp_vectors(n_indexes).unsqueeze(1).repeat_interleave(dec_len, dim=1)
+        bias_exp = self.bias_exp_vectors(n_indexes).unsqueeze(1).repeat_interleave(dec_len, dim=1)
         query_exp = (query_exp + cond).view(bs, dec_len * self.num_exp, self.d_model)
         bias_exp = (bias_exp + cond).view(bs, dec_len * self.num_exp, self.d_model)
 

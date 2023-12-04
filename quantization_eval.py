@@ -3,6 +3,7 @@ import math
 from argparse import Namespace
 import json
 import random
+import sys
 import argparse
 from utils.args_utils import str2list, str2bool
 import pickle
@@ -80,6 +81,7 @@ def compute_quantized_evaluation_loss(
             enc_x_num_pads=sub_batch_input_x_num_pads,
             dec_x_num_pads=sub_batch_target_y_num_pads,
         )
+
         pred = decoder(
             enc_x=cross_enc_out,
             dec_x=sub_batch_target_y[:, :-1],
@@ -398,6 +400,7 @@ def main():
         rank="cpu",
     )
 
+
     # Get quantized model structures
     model_type = args.model_type
     if model_type == "static":
@@ -439,6 +442,9 @@ def main():
         print("Quantized Encoder!")
         decoder_model = quantize_model(prepared_decoder)
         print("Quantized Decoder!")
+
+        encoder_model.eval()
+        decoder_model.eval()
     else: 
         prepared_encoder = prepare_model(encoder_model, example_input, qconfig_mapping)
         prepared_decoder = prepare_model(decoder_model, example_input, qconfig_mapping)
@@ -448,7 +454,9 @@ def main():
         print("Encoder loaded ...")
         decoder_model.load_state_dict(torch.load(args.decoder_load_path))
         print("Decoder loaded ...")
-    
+    # with open("prepared_decoder.txt", "w+") as f:
+    #     print(prepared_decoder, file=f)
+    # sys.exit()
 
 
     image_folder = args.image_folder
