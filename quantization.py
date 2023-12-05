@@ -124,12 +124,21 @@ def load_models(
     return encoder_model, decoder_model
 
 
-def demo_quantized_model(encoder, decoder, sos_idx, eos_idx, device="cpu"):
-    demo_image_path = "./demo_material/micheal.jpg"
+def demo_quantized_model(encoder, decoder, demo_image_path, idx2word, sos_idx, eos_idx, device="cpu"):
+    #demo_image_path = "./demo_material/micheal.jpg"
+    img_size = 384
     demo_image = preprocess_image(demo_image_path, img_size)
 
-    encoder.to(device)
-    decoder.to(device)
+    beam_search_arg_defaults = {
+        "beam_size": 5,
+        "beam_max_seq_len": 40,
+        "sample_or_max": "sample",
+        "how_many_outputs": 1,
+        "sos_idx": sos_idx,
+        "eos_idx": eos_idx,
+    }
+    # encoder.to(device)
+    # decoder.to(device)
 
     captioner = E2E_ExpansionNet_Captioner(
         beam_search_arg_defaults,
@@ -144,7 +153,7 @@ def demo_quantized_model(encoder, decoder, sos_idx, eos_idx, device="cpu"):
         )
 
     pred = tokens2description(
-        pred[0][0], dataset.caption_idx2word_list, sos_idx, eos_idx
+        pred[0][0], idx2word, sos_idx, eos_idx
     )
     print(" \n\tDescription: " + pred + "\n")
 

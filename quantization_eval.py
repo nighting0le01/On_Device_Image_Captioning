@@ -26,6 +26,7 @@ from utils.quantization_utils import (
     prepare_model,
     quantize_model,
 )
+from quantization import demo_quantized_model
 from torch.ao.quantization.qconfig import default_embedding_qat_qconfig
 from torch.ao.quantization.quantize_fx import prepare_fx, convert_fx
 from torch.ao.quantization import get_default_qconfig_mapping, QConfigMapping, get_default_qat_qconfig_mapping
@@ -305,12 +306,12 @@ def main():
     parser.add_argument(
         "--encoder_load_path",
         type=str,
-        default="./pretrained_weights/dynamic_quantized_encoder_rf_model.pth",
+        default="./pretrained_weights/dynamic_quantized_encoder_4_th.pth",
     )
     parser.add_argument(
         "--decoder_load_path",
         type=str,
-        default="./pretrained_weights/dynamic_quantized_decoder_rf_model.pth",
+        default="./pretrained_weights/dynamic_quantized_decoder_4_th.pth",
     )
     parser.add_argument("--image_folder", type=str, default="./VizWizData")
     parser.add_argument(
@@ -326,6 +327,7 @@ def main():
     parser.add_argument(
         "--model_type", type=str, default="qat", help="Model Type to Load"
     )
+    parser.add_argument("--demo", type=str2bool, default=False)
     args = parser.parse_args()
     torch.manual_seed(args.seed)
 
@@ -456,36 +458,43 @@ def main():
     #     print(prepared_decoder, file=f)
     # sys.exit()
 
-
-    image_folder = args.image_folder
-    array_of_init_seeds = [random.random() for _ in range(1 * 2)]
-    data_loader = VizWizDataLoader(
-        vizwiz_dataset=dataset,
-        batch_size=4,
-        num_procs=1,
-        array_of_init_seeds=array_of_init_seeds,
-        dataloader_mode="caption_wise",
-        resize_image_size=args.img_size,
-        rank=args.device,
-        image_folder=image_folder,
-        verbose=True,
-    )
-    model_max_len = dataset.max_seq_len + 20
-    print("DataLoader initialized ...")
-    evaluate_quantized_model_on_set(
-        encoder_model,
-        decoder_model,
-        dataset.caption_idx2word_list,
-        dataset.get_sos_token_idx(),
-        dataset.get_eos_token_idx(),
-        dataset.val_num_images,
-        data_loader,
-        VizWizDataset.ValidationSet_ID,
-        model_max_len,
-        args.device,
-        batch_size=args.batch_size,
-        beam_size=args.beam_size,
-    )
+    if args.demo: 
+        demo_images = os.listdir("./vizwiz_demo")
+        for file in demo_images: 
+            print(file)
+            path = os.path.join("./vizwiz_demo", file)
+            demo_quantized_model(encoder_model, decoder_model, path, dataset.caption_idx2word_list, sos_idx=dataset.get_sos_token_idx(),
+                eos_idx=dataset.get_eos_token_idx())
+    else: 
+        image_folder = args.image_folder
+        array_of_init_seeds = [random.random() for _ in range(1 * 2)]
+        data_loader = VizWizDataLoader(
+            vizwiz_dataset=dataset,
+            batch_size=4,
+            num_procs=1,
+            array_of_init_seeds=array_of_init_seeds,
+            dataloader_mode="caption_wise",
+            resize_image_size=args.img_size,
+            rank=args.device,
+            image_folder=image_folder,
+            verbose=True,
+        )
+        model_max_len = dataset.max_seq_len + 20
+        print("DataLoader initialized ...")
+        evaluate_quantized_model_on_set(
+            encoder_model,
+            decoder_model,
+            dataset.caption_idx2word_list,
+            dataset.get_sos_token_idx(),
+            dataset.get_eos_token_idx(),
+            dataset.val_num_images,
+            data_loader,
+            VizWizDataset.ValidationSet_ID,
+            model_max_len,
+            args.device,
+            batch_size=args.batch_size,
+            beam_size=args.beam_size,
+        )
 
 
 if __name__ == "__main__":
