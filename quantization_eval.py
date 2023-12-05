@@ -305,16 +305,16 @@ def main():
     parser.add_argument(
         "--encoder_load_path",
         type=str,
-        default="./pretrained_weights/dynamic_quantized_encoder_rf_model.pth",
+        default="/home/arpitsah/Desktop/Fall-2023/odml/On_Device_Image_Captioning/pretrained_weights/encoder_expt5.pth",
     )
     parser.add_argument(
         "--decoder_load_path",
         type=str,
-        default="./pretrained_weights/dynamic_quantized_decoder_rf_model.pth",
+        default="/home/arpitsah/Desktop/Fall-2023/odml/On_Device_Image_Captioning/pretrained_weights/decoder_expt5.pth",
     )
-    parser.add_argument("--image_folder", type=str, default="./VizWizData")
+    parser.add_argument("--image_folder", type=str, default="/home/arpitsah/Desktop/Fall-2023/odml/vizWiz")
     parser.add_argument(
-        "--vocab_path", type=str, default="./vocab/coco_vocab_idx_dict.json"
+        "--vocab_path", type=str, default="/home/arpitsah/Desktop/Fall-2023/odml/On_Device_Image_Captioning/vocab/coco_vocab_idx_dict.json"
     )
     parser.add_argument("--vizwiz", type=str2bool, default=True)
     parser.add_argument("--batch_size", type=int, default=1)
@@ -339,7 +339,7 @@ def main():
     )
     if args.vizwiz:
         if os.path.isfile(args.vocab_path):
-            with open("./vocab/coco_vocab_idx_dict.json", "r") as vocab_json:
+            with open("/home/arpitsah/Desktop/Fall-2023/odml/On_Device_Image_Captioning/vocab/coco_vocab_idx_dict.json", "r") as vocab_json:
                 coco_vocab_idx_dict = json.load(vocab_json)
         else:
             coco_vocab_idx_dict = None
@@ -350,7 +350,7 @@ def main():
             train=False,
             val=True,
             coco_vocab_dict=coco_vocab_idx_dict,
-            vizwiz_annotations_dir="/usr0/home/nvaikunt/On_Device_Image_Captioning/VizWizData/annotations",
+            vizwiz_annotations_dir="/home/arpitsah/Desktop/Fall-2023/odml/vizWiz/annotations",
         )
 
     encoder_model = End_ExpansionNet_v2_Encoder(

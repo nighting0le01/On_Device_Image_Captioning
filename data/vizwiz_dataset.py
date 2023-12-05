@@ -336,7 +336,7 @@ if __name__ == "__main__":
     with open("vocab/coco_vocab_idx_dict.json", "w") as vocab_json: 
         json.dump(coco_vocab_idx_dict, vocab_json)
     """
-    with open("vocab/coco_vocab_idx_dict.json", "r") as vocab_json:
+    with open("/home/arpitsah/Desktop/Fall-2023/odml/On_Device_Image_Captioning/vocab/coco_vocab_idx_dict.json", "r") as vocab_json:
         coco_vocab_idx_dict = json.load(vocab_json)
 
     dataset_w_new_vocab = VizWizDataset(
