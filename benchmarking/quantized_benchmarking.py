@@ -16,7 +16,7 @@ from torch.ao.quantization.quantize_fx import prepare_fx, convert_fx
 from torch.ao.quantization.qconfig import default_embedding_qat_qconfig
 from torch.ao.quantization import get_default_qconfig_mapping, QConfigMapping, get_default_qat_qconfig_mapping
 
-sys.path.append("/usr0/home/nvaikunt/On_Device_Image_Captioning")
+sys.path.append("/home/arpitsah/Desktop/Fall-2023/odml/On_Device_Image_Captioning")
 from models.End_ExpansionNet_v2 import (
     End_ExpansionNet_v2,
     End_ExpansionNet_v2_Encoder,
@@ -114,17 +114,10 @@ def compute_inference_Latency(
         split_encoder=True,
         encoder=encoder,
         decoder=decoder,
-<<<<<<< HEAD
         rank="cpu",
     )
     for run in range(runs):
         input_data = torch.randn(1, 3, img_size, img_size).to("cpu")
-=======
-        rank="cuda",
-    )
-    for run in range(runs):
-        input_data = torch.randn(1, 3, img_size, img_size).to("cuda")
->>>>>>> 732d20e (QAT Fix, Linting, KD Base)
 
         t0 = time.perf_counter()
         with torch.no_grad():
@@ -199,12 +192,12 @@ def main():
     parser.add_argument(
         "--encoder_load_path",
         type=str,
-        default="./pretrained_weights/static_quantized_encoder_rf_model.pth",
+        default="/home/arpitsah/Desktop/Fall-2023/odml/On_Device_Image_Captioning/pretrained_weights/base_QAKD_experiment/checkpoint_base_e4_encoder_.pth",
     )
     parser.add_argument(
         "--decoder_load_path",
         type=str,
-        default="./pretrained_weights/static_quantized_decoder_rf_model.pth",
+        default="/home/arpitsah/Desktop/Fall-2023/odml/On_Device_Image_Captioning/pretrained_weights/base_QAKD_experiment/checkpoint_base_e4_decoder_.pth",
     )
     parser.add_argument(
         "--image_paths",
@@ -305,20 +298,12 @@ def main():
                 torch.nn.Embedding, default_embedding_qat_qconfig
         )
     else:
-<<<<<<< HEAD
         qconfig_mapping = QConfigMapping().set_global(
             torch.ao.quantization.default_dynamic_qconfig
         )
     is_qat = False
     if model_type == "qat":
         is_qat = True
-=======
-        static = False
-        qconfig_mapping = QConfigMapping().set_global(
-            torch.ao.quantization.default_dynamic_qconfig
-        )
-
->>>>>>> 732d20e (QAT Fix, Linting, KD Base)
     example_input = (
         torch.randn(1, 3, args.img_size, args.img_size),
         torch.randint(1, 100, (1, 15)),
@@ -362,7 +347,6 @@ def main():
         print("Printing Model Sizes on Disk")
         print("Encoder Size:")
         print_size_of_model(encoder_model)
-<<<<<<< HEAD
         print("Decoder Size:")
         print_size_of_model(decoder_model)
 
@@ -377,21 +361,6 @@ def main():
     #         beam_size=args.beam_size,
     #         max_seq_len=args.max_seq_len,
     #     )
-=======
-        print_size_of_model(decoder_model)
-
-    if args.compute_FLOPS:
-        print("Computing FLOPS")
-        compute_FLOPS(
-            encoder_model,
-            decoder_model,
-            args.img_size,
-            sos_idx=sos_idx,
-            eos_idx=eos_idx,
-            beam_size=args.beam_size,
-            max_seq_len=args.max_seq_len,
-        )
->>>>>>> 732d20e (QAT Fix, Linting, KD Base)
 
     if args.compute_inference_time:
         print("Computing Average Inference Time")

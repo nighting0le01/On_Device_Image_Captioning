@@ -327,7 +327,7 @@ def main():
     parser.add_argument(
         "--model_type", type=str, default="qat", help="Model Type to Load"
     )
-    parser.add_argument("--demo", type=str2bool, default=False)
+    parser.add_argument("--demo", type=str2bool, default=True)
     args = parser.parse_args()
     torch.manual_seed(args.seed)
 
