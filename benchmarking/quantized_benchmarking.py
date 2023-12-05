@@ -114,10 +114,17 @@ def compute_inference_Latency(
         split_encoder=True,
         encoder=encoder,
         decoder=decoder,
+<<<<<<< HEAD
         rank="cpu",
     )
     for run in range(runs):
         input_data = torch.randn(1, 3, img_size, img_size).to("cpu")
+=======
+        rank="cuda",
+    )
+    for run in range(runs):
+        input_data = torch.randn(1, 3, img_size, img_size).to("cuda")
+>>>>>>> 732d20e (QAT Fix, Linting, KD Base)
 
         t0 = time.perf_counter()
         with torch.no_grad():
@@ -298,12 +305,20 @@ def main():
                 torch.nn.Embedding, default_embedding_qat_qconfig
         )
     else:
+<<<<<<< HEAD
         qconfig_mapping = QConfigMapping().set_global(
             torch.ao.quantization.default_dynamic_qconfig
         )
     is_qat = False
     if model_type == "qat":
         is_qat = True
+=======
+        static = False
+        qconfig_mapping = QConfigMapping().set_global(
+            torch.ao.quantization.default_dynamic_qconfig
+        )
+
+>>>>>>> 732d20e (QAT Fix, Linting, KD Base)
     example_input = (
         torch.randn(1, 3, args.img_size, args.img_size),
         torch.randint(1, 100, (1, 15)),
@@ -347,6 +362,7 @@ def main():
         print("Printing Model Sizes on Disk")
         print("Encoder Size:")
         print_size_of_model(encoder_model)
+<<<<<<< HEAD
         print("Decoder Size:")
         print_size_of_model(decoder_model)
 
@@ -361,6 +377,21 @@ def main():
     #         beam_size=args.beam_size,
     #         max_seq_len=args.max_seq_len,
     #     )
+=======
+        print_size_of_model(decoder_model)
+
+    if args.compute_FLOPS:
+        print("Computing FLOPS")
+        compute_FLOPS(
+            encoder_model,
+            decoder_model,
+            args.img_size,
+            sos_idx=sos_idx,
+            eos_idx=eos_idx,
+            beam_size=args.beam_size,
+            max_seq_len=args.max_seq_len,
+        )
+>>>>>>> 732d20e (QAT Fix, Linting, KD Base)
 
     if args.compute_inference_time:
         print("Computing Average Inference Time")

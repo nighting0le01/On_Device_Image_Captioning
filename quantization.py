@@ -18,6 +18,7 @@ from models.End_ExpansionNet_v2 import (
     End_ExpansionNet_v2_Encoder,
     End_ExpansionNet_v2_Decoder,
     E2E_ExpansionNet_Captioner,
+    E2E_ExpansionNet_Captioner,
 )
 
 from utils import language_utils
